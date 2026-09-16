@@ -1,0 +1,251 @@
+import type {
+  AiAgent,
+  ModelProfile,
+  RoutingRule,
+  StoreSnapshot,
+  Workspace,
+} from "@lumina/core";
+import { nowIso } from "@lumina/core";
+
+export const DEFAULT_AGENTS: AiAgent[] = [
+  {
+    id: "chatgpt_lumina",
+    name: "ChatGPT / LUMINA",
+    role: "Strategist / PM / Orchestrator",
+    bestFor: ["planning", "requirements", "routing decisions"],
+    dailySoftCapRp: 80,
+    weeklySoftCapRp: 400,
+    active: true,
+  },
+  {
+    id: "cursor",
+    name: "Cursor",
+    role: "Explorer / Daily Developer",
+    bestFor: ["ui", "exploration", "small fixes", "crud"],
+    dailySoftCapRp: 100,
+    weeklySoftCapRp: 500,
+    active: true,
+  },
+  {
+    id: "claude_code",
+    name: "Claude Code",
+    role: "Senior Builder / Architect",
+    bestFor: ["auth", "db", "architecture", "complex implementation"],
+    dailySoftCapRp: 80,
+    weeklySoftCapRp: 400,
+    active: true,
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    role: "Reviewer / Debugger / Independent Engineer",
+    bestFor: ["review", "security", "debugging", "regression"],
+    dailySoftCapRp: 80,
+    weeklySoftCapRp: 400,
+    active: true,
+  },
+];
+
+export const DEFAULT_MODEL_PROFILES: ModelProfile[] = [
+  {
+    id: "mp_cursor_fast",
+    agentId: "cursor",
+    tier: "fast",
+    label: "Composer / Fast",
+    providerModelHint: "cursor-fast",
+    active: true,
+  },
+  {
+    id: "mp_cursor_balanced",
+    agentId: "cursor",
+    tier: "balanced",
+    label: "Auto Balance",
+    providerModelHint: "cursor-balanced",
+    active: true,
+  },
+  {
+    id: "mp_cursor_strong",
+    agentId: "cursor",
+    tier: "strong",
+    label: "Auto Intelligence",
+    providerModelHint: "cursor-strong",
+    active: true,
+  },
+  {
+    id: "mp_cursor_max",
+    agentId: "cursor",
+    tier: "max",
+    label: "Max Mode",
+    providerModelHint: "cursor-max",
+    active: true,
+  },
+  {
+    id: "mp_claude_fast",
+    agentId: "claude_code",
+    tier: "fast",
+    label: "Haiku-class",
+    providerModelHint: "claude-haiku",
+    active: true,
+  },
+  {
+    id: "mp_claude_balanced",
+    agentId: "claude_code",
+    tier: "balanced",
+    label: "Sonnet-class",
+    providerModelHint: "claude-sonnet",
+    active: true,
+  },
+  {
+    id: "mp_claude_strong",
+    agentId: "claude_code",
+    tier: "strong",
+    label: "Opus-class",
+    providerModelHint: "claude-opus",
+    active: true,
+  },
+  {
+    id: "mp_claude_max",
+    agentId: "claude_code",
+    tier: "max",
+    label: "Latest strongest",
+    providerModelHint: "claude-max",
+    active: true,
+  },
+  {
+    id: "mp_codex_fast",
+    agentId: "codex",
+    tier: "fast",
+    label: "Codex Fast",
+    providerModelHint: "codex-fast",
+    active: true,
+  },
+  {
+    id: "mp_codex_balanced",
+    agentId: "codex",
+    tier: "balanced",
+    label: "Codex Balanced",
+    providerModelHint: "codex-balanced",
+    active: true,
+  },
+  {
+    id: "mp_codex_strong",
+    agentId: "codex",
+    tier: "strong",
+    label: "Codex Strong",
+    providerModelHint: "codex-strong",
+    active: true,
+  },
+  {
+    id: "mp_codex_max",
+    agentId: "codex",
+    tier: "max",
+    label: "Codex Max",
+    providerModelHint: "codex-max",
+    active: true,
+  },
+  {
+    id: "mp_lumina_balanced",
+    agentId: "chatgpt_lumina",
+    tier: "balanced",
+    label: "GPT Balanced",
+    providerModelHint: "gpt-balanced",
+    active: true,
+  },
+  {
+    id: "mp_lumina_strong",
+    agentId: "chatgpt_lumina",
+    tier: "strong",
+    label: "GPT Strong",
+    providerModelHint: "gpt-strong",
+    active: true,
+  },
+  {
+    id: "mp_lumina_max",
+    agentId: "chatgpt_lumina",
+    tier: "max",
+    label: "GPT Max",
+    providerModelHint: "gpt-max",
+    active: true,
+  },
+];
+
+export const DEFAULT_ROUTING_RULES: RoutingRule[] = [
+  {
+    id: "rr_split_xl",
+    name: "Split XL / complexity 9+",
+    priority: 100,
+    condition: { minComplexity: 9 },
+    result: {
+      agent: "chatgpt_lumina",
+      modelTier: "max",
+      mode: "plan",
+      splitRecommended: true,
+    },
+    active: true,
+  },
+  {
+    id: "rr_auth_strong",
+    name: "Auth/DB high complexity → Claude Strong",
+    priority: 80,
+    condition: { domains: ["auth", "db", "security"], minComplexity: 6 },
+    result: {
+      agent: "claude_code",
+      modelTier: "strong",
+      reviewRequired: true,
+      reviewAgent: "codex",
+    },
+    active: true,
+  },
+  {
+    id: "rr_review_codex",
+    name: "Review/Security → Codex",
+    priority: 70,
+    condition: { taskTypes: ["review", "security"] },
+    result: { agent: "codex", modelTier: "strong", mode: "review" },
+    active: true,
+  },
+  {
+    id: "rr_low_cursor",
+    name: "Low complexity → Cursor",
+    priority: 10,
+    condition: { maxComplexity: 3 },
+    result: { agent: "cursor", modelTier: "fast" },
+    active: true,
+  },
+];
+
+export function createEmptyWorkspace(): Workspace {
+  const t = nowIso();
+  return {
+    id: "ws_default",
+    name: "LUMINA HQ",
+    ownerName: "Tommy",
+    createdAt: t,
+    updatedAt: t,
+  };
+}
+
+export function createSeedStore(): StoreSnapshot {
+  return {
+    version: 1,
+    workspace: createEmptyWorkspace(),
+    projects: [],
+    missions: [],
+    tasks: [],
+    taskDependencies: [],
+    aiAgents: DEFAULT_AGENTS,
+    modelProfiles: DEFAULT_MODEL_PROFILES,
+    routingRules: DEFAULT_ROUTING_RULES,
+    runs: [],
+    usageEvents: [],
+    handoffs: [],
+    contextAssets: [],
+    approvals: [],
+    resourceOverrides: {
+      chatgpt_lumina: { todayRp: 0, weekRp: 0, status: "green" },
+      cursor: { todayRp: 0, weekRp: 0, status: "green" },
+      claude_code: { todayRp: 0, weekRp: 0, status: "green" },
+      codex: { todayRp: 0, weekRp: 0, status: "green" },
+    },
+  };
+}

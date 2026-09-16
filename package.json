@@ -1,0 +1,17 @@
+{
+  "name": "lumina-mission-control",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @lumina/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @lumina/router test && pnpm --filter @lumina/prompts test",
+    "smoke": "tsx scripts/smoke-v01.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}
