@@ -152,8 +152,28 @@ function recalculateProgress(store: StoreSnapshot, t = nowIso()): void {
     project.progress = projectTasks.length
       ? Math.round((done / projectTasks.length) * 100)
       : 0;
+    if (project.status !== "paused" && project.status !== "archived") {
+      if (projectTasks.length > 0 && done === projectTasks.length) {
+        project.status = "done";
+      } else if (project.status === "done") {
+        project.status = "active";
+      }
+    }
     project.updatedAt = t;
   }
+}
+
+export function isProjectComplete(project: Project): boolean {
+  return project.status === "done" || project.progress >= 100;
+}
+
+function taskBelongsToOpenProject(
+  task: Task,
+  projectById: Map<string, Project>,
+): boolean {
+  const project = projectById.get(task.projectId);
+  if (!project) return false;
+  return !isProjectComplete(project);
 }
 
 function removeTasks(store: StoreSnapshot, taskIds: Set<string>): void {
@@ -183,8 +203,11 @@ function removeTasks(store: StoreSnapshot, taskIds: Set<string>): void {
 
 export async function getDashboard() {
   const store = await readStore();
-  const activeProjects = store.projects.filter((p) => p.status === "active");
-  const tasks = store.tasks;
+  const projectById = new Map(store.projects.map((p) => [p.id, p]));
+  const activeProjects = store.projects.filter(
+    (p) => p.status === "active" && !isProjectComplete(p),
+  );
+  const tasks = store.tasks.filter((t) => taskBelongsToOpenProject(t, projectById));
   const running = tasks.filter((t) => t.status === "running");
   const blocked = tasks.filter((t) => t.status === "blocked");
   const review = tasks.filter((t) => t.status === "review");
@@ -252,7 +275,40 @@ export async function getDashboard() {
 
 export async function listProjects() {
   const store = await readStore();
-  return store.projects;
+  return store.projects
+    .slice()
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** 一覧用。作戦ごとの件数付き（削除前の目安） */
+export async function listProjectsWithStats() {
+  let rows: Array<{
+    project: Project;
+    taskCount: number;
+    runCount: number;
+    complete: boolean;
+  }> = [];
+  await updateStore((store) => {
+    recalculateProgress(store);
+    const projects = store.projects
+      .slice()
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    rows = projects.map((project) => {
+    const taskIds = new Set(
+      store.tasks
+        .filter((task) => task.projectId === project.id)
+        .map((task) => task.id),
+    );
+    const runCount = store.runs.filter((run) => taskIds.has(run.taskId)).length;
+    return {
+      project,
+      taskCount: taskIds.size,
+      runCount,
+      complete: isProjectComplete(project),
+    };
+    });
+  });
+  return rows;
 }
 
 export async function getProject(projectId: string) {

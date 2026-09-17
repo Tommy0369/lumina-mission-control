@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Button, Panel, ProgressBar } from "@lumina/ui";
-import { getProject, recommendationForTask } from "@/lib/services";
-import { actionDeleteProject, actionUpdateProject } from "@/lib/actions";
+import { getProject, isProjectComplete, recommendationForTask } from "@/lib/services";
+import { actionUpdateProject } from "@/lib/actions";
+import { ProjectDeleteForm } from "@/components/project-delete-form";
 import {
   TASK_STATUS_LABEL,
   modelPickHint,
@@ -19,11 +20,14 @@ export default async function ProjectPlanPage({
   const data = await getProject(id);
   if (!data) notFound();
   const { project, missions, tasks, currentTask, runs } = data;
+  const taskCount = tasks.length;
+  const runCount = runs.length;
   const ordered = tasks
     .slice()
     .sort((a, b) => b.priority - a.priority || a.code.localeCompare(b.code));
   const recFor = (task: (typeof tasks)[number]) =>
     recommendationForTask(task, runs);
+  const complete = isProjectComplete(project);
 
   return (
     <>
@@ -34,9 +38,22 @@ export default async function ProjectPlanPage({
           <p>{project.goal}</p>
         </div>
         <div style={{ width: 160 }}>
-          <ProgressBar value={project.progress} label={`進捗 ${project.progress}%`} />
+          <ProgressBar
+            value={project.progress}
+            label={complete ? "完成" : `進捗 ${project.progress}%`}
+          />
         </div>
       </header>
+
+      {complete ? (
+        <Panel title="この作戦は完成">
+          <p style={{ margin: 0 }}>
+            段取りはすべて「できた」。ホームの「いまやる一手」には出ない。{" "}
+            <Link href="/projects#completed">完成したもの</Link>{" "}
+            一覧で見られる。記録を消す場合は下の「詳しく」から削除。
+          </p>
+        </Panel>
+      ) : null}
 
       {project.planIntake ? (
         <Panel title="作戦作成時のヒアリング">
@@ -54,7 +71,7 @@ export default async function ProjectPlanPage({
         </Panel>
       ) : null}
 
-      {currentTask ? (
+      {currentTask && !complete ? (
         <Panel title="いまの一歩">
           <div className="mc-stack">
             <div style={{ fontSize: 18, fontWeight: 650 }}>{currentTask.title}</div>
@@ -145,20 +162,13 @@ export default async function ProjectPlanPage({
               <Button type="submit">保存する</Button>
             </form>
           </Panel>
-          <Panel title="この作戦をやめる">
-            <p className="mc-muted" style={{ marginTop: 0 }}>
-              取り消せない。確認のため、いまの名前を入力する。
-            </p>
-            <form action={actionDeleteProject} className="mc-form">
-              <input type="hidden" name="projectId" value={project.id} />
-              <label>
-                名前（確認）
-                <input name="confirmName" placeholder={project.name} required />
-              </label>
-              <Button type="submit" variant="secondary">
-                削除する
-              </Button>
-            </form>
+          <Panel title="この作戦をやめる（データごと削除）">
+            <ProjectDeleteForm
+              projectId={project.id}
+              projectName={project.name}
+              taskCount={taskCount}
+              runCount={runCount}
+            />
           </Panel>
         </div>
       </details>

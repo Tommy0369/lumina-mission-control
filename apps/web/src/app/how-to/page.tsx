@@ -72,6 +72,15 @@ export default function HowToPage() {
           終わると「次は誰に何を渡すか」が出る。完成まで繰り返す。
         </p>
       </Panel>
+
+      <Panel title="5. もういらない作戦を消す">
+        <p style={{ margin: 0 }}>
+          「つくっているもの」一覧で「もういらない → データごと削除」。
+          段取り・依頼・申し送りが{" "}
+          <code className="mc-mono">data/store.json</code>{" "}
+          からまとめて消える。名前入力で確認。取り消せない。
+        </p>
+      </Panel>
     </>
   );
 }

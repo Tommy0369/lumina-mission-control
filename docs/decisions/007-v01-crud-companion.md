@@ -9,6 +9,8 @@ V0.1 keeps Project / Mission / Task create-read-update-delete.
 
 Daily UI is still the companion path: write an idea, read the plan, advance a step through Run. Edit and delete live under 「詳しく」, with a typed confirmation for delete.
 
+Project delete from **つくっているもの** list removes the project, its missions, tasks, runs, handoffs, usage events, and related rows from `data/store.json` in one cascade. No orphan companion data on disk.
+
 Status is not edited by hand. `completeRun` moves a step through running / review / done / blocked.
 
 ## Why

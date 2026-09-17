@@ -117,4 +117,36 @@ describe("orchestration state machine", () => {
     const missing = await api.getTask(firstTaskId);
     assert.equal(missing, null);
   });
+
+  it("deletes a project and cascades tasks, runs, and missions", async () => {
+    const { projectId, firstTaskId } = await api.createPlanFromIdea({
+      idea: "テスト用の作戦",
+    });
+    const detail = await api.getProject(projectId);
+    assert.ok(detail);
+    const name = detail!.project.name;
+    await assert.rejects(
+      () => api.deleteProject(projectId, "wrong-name"),
+      /confirmation mismatch/,
+    );
+    await api.deleteProject(projectId, name);
+    assert.equal(await api.getProject(projectId), null);
+    assert.equal(await api.getTask(firstTaskId), null);
+  });
+
+  it("marks project done when all plan steps are complete", async () => {
+    const { projectId } = await api.createPlanFromIdea({
+      idea: "完成テスト用",
+    });
+    const detail = await api.getProject(projectId);
+    assert.ok(detail);
+    for (const task of detail!.tasks.sort((a, b) => b.priority - a.priority)) {
+      const run = await api.startRun({ taskId: task.id, useRecommended: true });
+      await api.completeRun({ runId: run.id, result: "success" });
+    }
+    const after = await api.getProject(projectId);
+    assert.equal(after!.project.progress, 100);
+    assert.equal(after!.project.status, "done");
+    assert.ok(api.isProjectComplete(after!.project));
+  });
 });
