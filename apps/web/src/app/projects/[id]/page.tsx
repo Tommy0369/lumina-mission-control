@@ -10,6 +10,7 @@ import {
   recommendationLabel,
 } from "@/lib/labels";
 import { formatPlanIntakeSummary } from "@/lib/plan-intake";
+import { BackToProjectsLink } from "@/components/back-to-projects-link";
 
 export default async function ProjectPlanPage({
   params,
@@ -31,6 +32,7 @@ export default async function ProjectPlanPage({
 
   return (
     <>
+      <BackToProjectsLink hash={complete ? "completed" : undefined} />
       <header className="mc-header">
         <div>
           <div className="mc-muted">作戦</div>

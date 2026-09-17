@@ -1,5 +1,6 @@
 import { Button } from "@lumina/ui";
 import { actionDeleteProject } from "@/lib/actions";
+import { CopyConfirmName } from "@/components/copy-confirm-name";
 
 export function ProjectDeleteForm({
   projectId,
@@ -30,13 +31,15 @@ export function ProjectDeleteForm({
           段取り {taskCount} / 依頼 {runCount} もまとめて削除
         </p>
       )}
+      <CopyConfirmName name={projectName} />
       <label>
-        確認のため、名前をそのまま入力
+        確認のため、名前をそのまま入力（コピペ可）
         <input
           name="confirmName"
           placeholder={projectName}
           required
           autoComplete="off"
+          spellCheck={false}
         />
       </label>
       <Button type="submit" variant="secondary">
