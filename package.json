@@ -10,7 +10,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @lumina/router test && pnpm --filter @lumina/prompts test && tsx --test apps/web/src/lib/orchestration.test.ts apps/web/src/lib/auth/policy.test.ts apps/web/src/lib/plan-intake.test.ts",
     "smoke": "tsx scripts/smoke-v01.ts",
-    "verify:auth": "tsx scripts/verify-auth-ui.ts"
+    "verify:auth": "tsx scripts/verify-auth-ui.ts",
+    "desktop:install": "bash scripts/build-macos-app.sh --desktop"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

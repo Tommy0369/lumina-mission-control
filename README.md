@@ -24,6 +24,15 @@ pnpm dev
 http://localhost:3000  
 詳しい説明: アプリ内「使い方」または `docs/architecture/product-brief.md`
 
+## Mac デスクトップから開く
+
+```bash
+pnpm desktop:install
+```
+
+デスクトップに **LUMINA.app** ができる。ダブルクリックで dev が未起動なら自動起動し、ブラウザのアプリウィンドウで開く。  
+アイコン再生成: `assets/macos/README.md`
+
 ## Google ログイン（任意）
 
 `apps/web/.env.local` に Supabase の URL と anon key を書くと、認証が有効になる。
