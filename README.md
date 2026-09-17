@@ -1,64 +1,66 @@
-# LUMINA AI Mission Control
+# LUMINA
 
-**Plan. Route. Build. Review. Learn.**
+やりたいことを書くと、  
+**どのAIの・どのモデルで・どこまで作って・次に何を渡すか** をデザインし、  
+完成まで伴走する。
 
-開発管制塔。やりたいことを入力すると、Task分解・AI推薦・Prompt生成・手動Run記録・Handoff・次AI提示・Resource Pointsまでを回す。
+## 使い方（これだけ）
 
-## V0.1 = Manual Orchestration
+1. ホームでやりたいことを書く
+2. 作戦（段取り）が出る
+3. 「いまの一歩」で依頼文をコピー → 外部AIで作業
+4. 「できた / つまった」を押す
+5. 申し送りを見て次へ。完成まで繰り返す
 
-自動CLI実行はしない。
+自動でCLIは動かさない（手動伴走）。
 
-1. Taskを開く
-2. Recommended Agent / Tier を確認
-3. Promptをコピー
-4. 外部AI（Cursor / Claude Code / Codex / ChatGPT）で作業
-5. Resultを登録
-6. Handoffと次AIが出る
-
-## Quick start
+## 起動
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Open http://localhost:3000
+http://localhost:3000  
+詳しい説明: アプリ内「使い方」または `docs/architecture/product-brief.md`
 
-Dashboard の **Seed Dogfood Project** で Mission Control 自身の開発タスクが入る。
+## Google ログイン（任意）
 
-## Monorepo
-
-```text
-apps/web              Next.js UI
-packages/core         types / RP / task size
-packages/router       rule-based AI router
-packages/prompts      prompt + handoff generator
-packages/ui           shared UI primitives
-packages/runner-protocol  V0.2 types only
-supabase/             migrations + seed
-runner/               empty stub (V0.2)
-data/store.json       local SSOT for V0.1
-```
-
-## Principles
-
-- Projectは共有、Task記憶は分離、モデルは仕事に合わせる
-- Subscription First / API Last（V0.2 runner）
-- Run開始時に行を先に作る（状態先確定）
-- Capability Tier: fast / balanced / strong / max
-- API KeyをDBに保存しない
-
-## Supabase
-
-Migrations: `supabase/migrations/`
-
-V0.1はローカルJSONで動く。Supabase接続時は:
+`apps/web/.env.local` に Supabase の URL と anon key を書くと、認証が有効になる。
+**書かなければ認証はオフのまま**で、いままでどおり `data/store.json` だけで動く。
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local
+# apps/web/.env.local
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+LUMINA_ALLOWED_EMAILS=you@example.com
 ```
 
-## Docs
+`LUMINA_ALLOWED_EMAILS` は入れるアカウントの許可リスト（カンマ区切り）。
+空にすると Google でログインできた人は誰でも入れるので、個人利用なら必ず書く。
 
-- [Product brief](docs/architecture/product-brief.md)
-- [ADRs](docs/decisions/)
+コンソール側の設定は一度だけ:
+
+1. Supabase → Authentication → Providers → Google を有効化し、Client ID / Secret を入れる
+2. Google Cloud Console → OAuth クライアント（Web）を作り、承認済みリダイレクト URI に Supabase が示す `https://<project-ref>.supabase.co/auth/v1/callback` を登録
+3. Supabase → Authentication → URL Configuration に `http://localhost:3000/**` を追加
+4. `.env.local` を書いたら dev サーバーを再起動
+
+Client ID / Secret・service role key はこのリポジトリにも DB にも置かない（`AGENTS.md`）。
+
+## 構成
+
+```text
+apps/web                 伴走UI
+packages/core            型・見積もり
+packages/router          おすすめAIのルール（裏）
+packages/prompts         依頼文・申し送り生成（裏）
+packages/ui              UI部品
+supabase/                将来の正本スキーマ
+data/store.json          いまのローカルデータ
+```
+
+## 思想
+
+強いAIを全部に使わない。  
+必要な最小のAI計算で、完成まで届ける。

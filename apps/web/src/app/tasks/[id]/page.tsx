@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Button, Panel, ProgressBar } from "@lumina/ui";
+import { Badge, Button, Panel } from "@lumina/ui";
+import type { AgentId, ModelTier } from "@lumina/core";
 import { getTask } from "@/lib/services";
-import {
-  actionCompleteRun,
-  actionReroute,
-  actionStartRun,
-} from "@/lib/actions";
+import { actionCompleteRun, actionDeleteTask, actionStartRun, actionUpdateTask } from "@/lib/actions";
 import { PromptViewer } from "@/components/prompt-tools";
+import { AgentModelPicker } from "@/components/agent-model-picker";
+import {
+  TASK_STATUS_LABEL,
+  agentLabel,
+  modelPickHint,
+  recommendationLabel,
+  resolveModelProfile,
+} from "@/lib/labels";
 
-export default async function TaskDetailPage({
+export default async function StepPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -27,242 +32,166 @@ export default async function TaskDetailPage({
     reviewPrompt,
     executionBlocked,
     taskSize,
+    nextRecommendation,
   } = data;
   const activeRun = runs.find((r) => r.status === "running");
   const latestHandoff = handoffs[handoffs.length - 1];
+  const isReviewStep = task.status === "review" || activeRun?.mode === "review";
+  const displayedAgent = activeRun?.agent ?? nextRecommendation.agent;
+  const displayedTier = activeRun?.modelTier ?? nextRecommendation.modelTier;
+  const profile = resolveModelProfile(
+    displayedAgent,
+    displayedTier,
+  );
+  const overrideAgent = (nextRecommendation.agent ?? "cursor") as AgentId;
+  const overrideTier = (nextRecommendation.modelTier ?? "balanced") as ModelTier;
 
   return (
     <>
       <header className="mc-header">
         <div>
-          <div className="mc-mono">{task.code}</div>
+          <div className="mc-muted">いまの一歩</div>
           <h1>{task.title}</h1>
           <p>
             {project ? (
               <Link href={`/projects/${project.id}`}>{project.name}</Link>
             ) : null}
-            {mission ? (
-              <>
-                {" · "}
-                <Link href={`/missions/${mission.id}`}>{mission.title}</Link>
-              </>
-            ) : null}
+            {mission ? <> · {mission.title}</> : null}
           </p>
         </div>
         <Badge tone={task.status === "blocked" ? "red" : "purple"}>
-          {task.status}
+          {TASK_STATUS_LABEL[task.status]}
         </Badge>
       </header>
 
       {executionBlocked || task.splitRecommended ? (
-        <Panel title="Task Too Large">
+        <Panel title="この一歩は大きすぎる">
           <p style={{ margin: 0 }}>
-            Size <strong>{taskSize}</strong>. Do not execute as-is.
-            Split into smaller tasks first. Strongest model should PLAN only.
+            サイズ {taskSize}。このままやらず、もっと小さく分けてから。
           </p>
         </Panel>
       ) : null}
 
-      <div className="mc-grid-2">
-        <Panel title="Goal">
-          <p style={{ margin: 0, fontSize: 16 }}>{task.goal}</p>
-          {task.description ? (
-            <p className="mc-muted" style={{ marginTop: 8 }}>
-              {task.description}
-            </p>
-          ) : null}
-        </Panel>
-
-        <Panel title="AI Router">
-          <div className="mc-stack">
-            <div>
-              <div className="mc-muted">Recommended Agent</div>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>
-                {(task.recommendedAgent ?? "—").replaceAll("_", " ").toUpperCase()}
-              </div>
-            </div>
-            <div className="mc-row" style={{ background: "transparent" }}>
-              <span>Model Tier</span>
-              <Badge tone="blue">{task.recommendedModelTier ?? "—"}</Badge>
-            </div>
-            <div className="mc-row" style={{ background: "transparent" }}>
-              <span>Mode</span>
-              <Badge tone="purple">{task.recommendedMode ?? "—"}</Badge>
-            </div>
-            <div className="mc-row" style={{ background: "transparent" }}>
-              <span>Complexity</span>
-              <strong>{task.complexity} / 10</strong>
-            </div>
-            <div className="mc-row" style={{ background: "transparent" }}>
-              <span>Size</span>
-              <strong>{taskSize}</strong>
-            </div>
-            <div>
-              <div className="mc-muted">Why?</div>
-              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                {task.routingReasons.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-              </ul>
-            </div>
-            <form
-              action={async () => {
-                "use server";
-                await actionReroute(task.id);
-              }}
-            >
-              <Button type="submit" variant="ghost">
-                Recompute Routing
-              </Button>
-            </form>
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mc-grid-2">
-        <Panel title="Context">
-          <div className="mc-muted">{task.contextFiles.length} files · {task.contextSize}</div>
-          <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-            {task.contextFiles.map((f) => (
-              <li key={f} className="mc-mono">
-                {f}
-              </li>
-            ))}
-          </ul>
-          <div style={{ marginTop: 12 }}>
-            <div className="mc-muted">Scope</div>
-            <p style={{ margin: "4px 0 0" }}>{task.scope || "—"}</p>
-            <div className="mc-muted" style={{ marginTop: 8 }}>
-              Do not touch
-            </div>
-            <p style={{ margin: "4px 0 0" }}>{task.outOfScope || "—"}</p>
-          </div>
-        </Panel>
-
-        <Panel title="Token / Resource">
-          <ProgressBar
-            value={task.resourceBudget ?? 0}
-            max={Math.max(40, (task.resourceBudget ?? 0) * 1.5)}
-            label={`Budget ${task.resourceBudget ?? 0} RP (expected)`}
-          />
-          <div className="mc-muted" style={{ marginTop: 8 }}>
-            Permissions for recommended run:{" "}
-            {task.recommendedMode === "review"
-              ? "READ"
-              : "READ · WRITE · EXECUTE (COMMIT/PUSH require approval)"}
-          </div>
-        </Panel>
-      </div>
-
-      <Panel title="Prompt" actions={<span className="mc-muted">Auto-generated</span>}>
-        <PromptViewer prompt={prompt} reviewPrompt={reviewPrompt} />
+      <Panel title="何をするか">
+        <p style={{ margin: 0, fontSize: 18 }}>{task.goal}</p>
       </Panel>
 
-      <Panel title="Ready to Run">
+      <div className="mc-grid-2">
+        <Panel title={isReviewStep ? "次はレビュー" : "使うAI・モデル・仕事量（初推定）"}>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>
+            {recommendationLabel(
+              displayedAgent,
+              displayedTier,
+            )}
+          </div>
+          <div className="mc-muted" style={{ marginTop: 8 }}>
+            {modelPickHint(displayedAgent, displayedTier)}
+          </div>
+          {task.routingReasons.includes("plan_intake") ? (
+            <p className="mc-muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              作戦作成時の 3 問 + 固定ルールから出した初推定。必ずしも最適ではない。
+            </p>
+          ) : null}
+          {profile ? (
+            <div className="mc-mono" style={{ marginTop: 8 }}>
+              {profile.providerModelHint}
+            </div>
+          ) : null}
+        </Panel>
+        <Panel title="どこまで / 触らないこと">
+          <div className="mc-muted">どこまで</div>
+          <p style={{ margin: "4px 0 12px" }}>{task.scope || "—"}</p>
+          <div className="mc-muted">触らないこと</div>
+          <p style={{ margin: "4px 0 0" }}>{task.outOfScope || "—"}</p>
+        </Panel>
+      </div>
+
+      <Panel title={isReviewStep ? "依頼文（レビュー用をコピー）" : "依頼文（これをコピー）"}>
+        <PromptViewer
+          prompt={
+            activeRun?.promptSnapshot ??
+            (isReviewStep && reviewPrompt ? reviewPrompt : prompt)
+          }
+          reviewPrompt={
+            activeRun ? null : isReviewStep && reviewPrompt ? prompt : reviewPrompt
+          }
+        />
+        <p className="mc-muted" style={{ margin: "12px 0 0" }}>
+          先に上のモデルと仕事量を選んでから、依頼文を貼る。終わったら下へ戻る。
+        </p>
+      </Panel>
+
+      <Panel title="進める">
         {executionBlocked ? (
-          <p className="mc-muted">Execution blocked until split.</p>
+          <p className="mc-muted">分割するまで始められない。</p>
+        ) : task.status === "done" || task.status === "cancelled" ? (
+          <p className="mc-muted" style={{ margin: 0 }}>
+            この作業は完了済み。次の一手はホームか作戦画面で確認して。
+          </p>
         ) : activeRun ? (
           <div className="mc-stack">
-            <div>
-              <Badge tone="purple">RUNNING</Badge>{" "}
-              <span className="mc-mono">{activeRun.code}</span> · {activeRun.agent} /{" "}
-              {activeRun.modelTier}
-            </div>
-            <p className="mc-muted">
-              Copy the prompt, run externally, then register the result below.
-              State was recorded at start (state-first).
+            <p style={{ margin: 0 }}>
+              いま{" "}
+              <strong>
+                {recommendationLabel(activeRun.agent, activeRun.modelTier)}
+              </strong>{" "}
+              に依頼中。作業が終わったら結果を入れて。
             </p>
             <form action={actionCompleteRun} className="mc-form">
               <input type="hidden" name="runId" value={activeRun.id} />
               <label>
-                Result
+                どうなった？
                 <select name="result" defaultValue="success">
-                  <option value="success">success</option>
-                  <option value="failure">failure</option>
+                  <option value="success">できた</option>
+                  <option value="failure">つまった</option>
                 </select>
               </label>
               <label>
-                Changed files (one per line)
+                変わったファイル（わかれば・1行1件）
                 <textarea name="changedFiles" rows={3} />
               </label>
               <label>
-                Tests summary
-                <input name="testsSummary" placeholder="typecheck PASS / auth.test PASS" />
+                確認メモ（テストや気づき）
+                <input name="testsSummary" placeholder="動いた / まだ怪しい点" />
               </label>
               <label>
-                Notes / risks
+                残リスク・メモ
                 <textarea name="resultNotes" rows={2} />
               </label>
-              <label>
-                Actual RP
-                <input
-                  name="resourcePointsActual"
-                  type="number"
-                  step={0.1}
-                  defaultValue={activeRun.resourcePointsEstimated}
-                />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none" }}>
-                <input name="humanIntervention" type="checkbox" />
-                Human intervention required
-              </label>
-              <Button type="submit">Complete Run + Generate Handoff</Button>
+              <Button type="submit">申し送りをつくって次へ</Button>
             </form>
           </div>
         ) : (
           <div className="mc-stack">
-            <div className="mc-row" style={{ background: "transparent" }}>
-              <span>Use recommended</span>
-              <strong>
-                {task.recommendedAgent} / {task.recommendedModelTier}
-              </strong>
-            </div>
             <form action={actionStartRun} className="mc-form">
               <input type="hidden" name="taskId" value={task.id} />
               <input type="hidden" name="useRecommended" value="true" />
-              <Button type="submit">Use Recommended · Start Run</Button>
+              <Button type="submit">
+                {isReviewStep ? "レビューを始める" : "この作業を始める"}
+              </Button>
             </form>
+            <p className="mc-muted" style={{ margin: 0 }}>
+              {isReviewStep
+                ? "押すと「レビュー中」になる。上のレビュー用プロンプトをCodexへ渡して。"
+                : "押すと「依頼中」になる。モデルを合わせてから依頼文をコピー。"}
+            </p>
             <details>
               <summary className="mc-muted" style={{ cursor: "pointer" }}>
-                Change agent / tier
+                AIとモデルを自分で選ぶ
               </summary>
-              <form action={actionStartRun} className="mc-form" style={{ marginTop: 12 }}>
+              <form
+                action={actionStartRun}
+                className="mc-form"
+                style={{ marginTop: 12 }}
+              >
                 <input type="hidden" name="taskId" value={task.id} />
                 <input type="hidden" name="useRecommended" value="false" />
-                <label>
-                  Agent
-                  <select name="agent" defaultValue={task.recommendedAgent ?? "cursor"}>
-                    <option value="cursor">cursor</option>
-                    <option value="claude_code">claude_code</option>
-                    <option value="codex">codex</option>
-                    <option value="chatgpt_lumina">chatgpt_lumina</option>
-                  </select>
-                </label>
-                <label>
-                  Model tier
-                  <select
-                    name="modelTier"
-                    defaultValue={task.recommendedModelTier ?? "balanced"}
-                  >
-                    <option value="fast">fast</option>
-                    <option value="balanced">balanced</option>
-                    <option value="strong">strong</option>
-                    <option value="max">max</option>
-                  </select>
-                </label>
-                <label>
-                  Mode
-                  <select name="mode" defaultValue={task.recommendedMode ?? "implementation"}>
-                    <option value="ask">ask</option>
-                    <option value="plan">plan</option>
-                    <option value="explore">explore</option>
-                    <option value="implementation">implementation</option>
-                    <option value="review">review</option>
-                    <option value="debug">debug</option>
-                  </select>
-                </label>
+                <AgentModelPicker
+                  defaultAgent={overrideAgent}
+                  defaultTier={overrideTier}
+                />
                 <Button type="submit" variant="secondary">
-                  Start with override
+                  選んだ組み合わせで始める
                 </Button>
               </form>
             </details>
@@ -270,53 +199,121 @@ export default async function TaskDetailPage({
         )}
       </Panel>
 
-      <div className="mc-grid-2">
-        <Panel title="Runs">
-          <div className="mc-list">
-            {runs.length === 0 ? (
-              <p className="mc-muted">No runs yet.</p>
+      {latestHandoff ? (
+        <Panel title="申し送り">
+          <div className="mc-stack">
+            {latestHandoff.nextAgent ? (
+              <div>
+                次のおすすめ:{" "}
+                <strong>{agentLabel(latestHandoff.nextAgent)}</strong>
+                <div className="mc-muted">{latestHandoff.nextAction}</div>
+              </div>
             ) : (
-              runs.map((r) => (
-                <div key={r.id} className="mc-row">
-                  <span>
-                    <span className="mc-mono">{r.code}</span> {r.agent} / {r.modelTier}
-                  </span>
-                  <Badge
-                    tone={
-                      r.status === "success"
-                        ? "green"
-                        : r.status === "failure"
-                          ? "red"
-                          : "purple"
-                    }
-                  >
-                    {r.status}
-                  </Badge>
-                </div>
-              ))
+              <div className="mc-muted">次の一手はホームか作戦画面で確認。</div>
+            )}
+            <PromptViewer
+              prompt={latestHandoff.reviewPrompt || latestHandoff.summary}
+            />
+            {project ? (
+              <Link href={`/projects/${project.id}`}>
+                <Button variant="secondary">作戦に戻る</Button>
+              </Link>
+            ) : (
+              <Link href="/">
+                <Button variant="secondary">ホームへ</Button>
+              </Link>
             )}
           </div>
         </Panel>
+      ) : null}
 
-        <Panel title="Latest Handoff">
-          {latestHandoff ? (
-            <div className="mc-stack">
-              <pre className="mc-pre">{latestHandoff.summary}</pre>
-              {latestHandoff.nextAgent ? (
-                <div>
-                  Next: <strong>{latestHandoff.nextAgent}</strong>
-                  <div className="mc-muted">{latestHandoff.nextAction}</div>
-                </div>
-              ) : null}
-              {latestHandoff.reviewPrompt ? (
-                <PromptViewer prompt={latestHandoff.reviewPrompt} />
-              ) : null}
-            </div>
-          ) : (
-            <p className="mc-muted">Handoff appears after a run completes.</p>
-          )}
-        </Panel>
-      </div>
+      <details>
+        <summary className="mc-muted" style={{ cursor: "pointer" }}>
+          詳しく（普段は見なくていい）
+        </summary>
+        <div className="mc-stack" style={{ marginTop: 12 }}>
+          <Panel title="理由">
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {task.routingReasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </Panel>
+          <Panel title="この一歩を直す">
+            <form action={actionUpdateTask} className="mc-form">
+              <input type="hidden" name="taskId" value={task.id} />
+              <label>
+                タイトル
+                <input name="title" defaultValue={task.title} required />
+              </label>
+              <label>
+                ゴール
+                <textarea name="goal" rows={2} defaultValue={task.goal} required />
+              </label>
+              <label>
+                どこまで
+                <textarea name="scope" rows={2} defaultValue={task.scope} />
+              </label>
+              <label>
+                触らないこと
+                <textarea
+                  name="outOfScope"
+                  rows={2}
+                  defaultValue={task.outOfScope}
+                />
+              </label>
+              <Button type="submit">保存する</Button>
+            </form>
+          </Panel>
+          <Panel title="この一歩をやめる">
+            <p className="mc-muted" style={{ marginTop: 0 }}>
+              取り消せない。確認のため、番号 {task.code} を入力する。
+            </p>
+            <form action={actionDeleteTask} className="mc-form">
+              <input type="hidden" name="taskId" value={task.id} />
+              <label>
+                番号（確認）
+                <input name="confirmCode" placeholder={task.code} required />
+              </label>
+              <Button type="submit" variant="secondary">
+                削除する
+              </Button>
+            </form>
+          </Panel>
+          <Panel title="この回の依頼履歴">
+            {runs.length === 0 ? (
+              <p className="mc-muted">まだない</p>
+            ) : (
+              <div className="mc-list">
+                {runs.map((r) => (
+                  <div key={r.id} className="mc-row">
+                    <span>
+                      {recommendationLabel(r.agent, r.modelTier)}
+                    </span>
+                    <Badge
+                      tone={
+                        r.status === "success"
+                          ? "green"
+                          : r.status === "failure"
+                            ? "red"
+                            : "purple"
+                      }
+                    >
+                      {r.status === "success"
+                        ? "できた"
+                        : r.status === "failure"
+                          ? "つまった"
+                          : r.status === "running"
+                            ? "いまやってる"
+                            : r.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+      </details>
     </>
   );
 }

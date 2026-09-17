@@ -16,19 +16,23 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LUMINA Mission Control",
-  description: "Plan. Route. Build. Review. Learn.",
+  title: "LUMINA — 伴走",
+  description:
+    "どのAIのどのモデルでどこまで作り、次に何を渡すかをデザインし、完成まで伴走する",
 };
 
 const NAV = [
-  { href: "/", label: "Dashboard" },
-  { href: "/projects", label: "Projects" },
-  { href: "/missions", label: "Missions" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/runs", label: "Runs" },
-  { href: "/resources", label: "AI Resources" },
-  { href: "/routing", label: "Routing" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", label: "ホーム" },
+  { href: "/projects", label: "つくっているもの" },
+  { href: "/tasks", label: "いまの作業" },
+  { href: "/how-to", label: "使い方" },
+];
+
+const MORE = [
+  { href: "/runs", label: "依頼の履歴" },
+  { href: "/resources", label: "使いすぎ（詳しく）" },
+  { href: "/routing", label: "振り分けルール（詳しく）" },
+  { href: "/settings", label: "設定" },
 ];
 
 export default function RootLayout({
@@ -44,7 +48,7 @@ export default function RootLayout({
             <div>
               <div className="mc-brand">LUMINA</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                Mission Control
+                完成まで伴走する
               </div>
             </div>
             <nav className="mc-nav">
@@ -54,9 +58,20 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
+            <details style={{ marginTop: 8 }}>
+              <summary className="mc-muted" style={{ cursor: "pointer", fontSize: 12 }}>
+                詳しく
+              </summary>
+              <nav className="mc-nav" style={{ marginTop: 8 }}>
+                {MORE.map((item) => (
+                  <Link key={item.href} href={item.href}>
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            </details>
             <div className="mc-muted" style={{ marginTop: "auto" }}>
-              Manual Orchestration · V0.1
-              <div style={{ marginTop: 8 }}>Tommy</div>
+              とみー専用 · 手動で回す
             </div>
           </aside>
           <main className="mc-main">{children}</main>

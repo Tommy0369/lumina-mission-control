@@ -1,161 +1,119 @@
 import Link from "next/link";
-import { Badge, Button, Panel, ProgressBar } from "@lumina/ui";
+import { Badge, Button, Panel } from "@lumina/ui";
 import { getDashboard } from "@/lib/services";
-import { actionSeedDogfood } from "@/lib/actions";
+import { actionCreatePlanFromIdea } from "@/lib/actions";
+import { PlanIntakeFields } from "@/components/plan-intake-fields";
+import {
+  TASK_STATUS_LABEL,
+  modelPickHint,
+  recommendationLabel,
+} from "@/lib/labels";
 
-function statusTone(status: string) {
-  if (status === "green") return "green" as const;
-  if (status === "yellow") return "yellow" as const;
-  if (status === "red") return "red" as const;
-  return "neutral" as const;
-}
-
-export default async function DashboardPage() {
+export default async function HomePage() {
   const data = await getDashboard();
+  const continuing = data.activeProjects[0] ?? null;
 
   return (
     <>
       <header className="mc-header">
         <div>
-          <h1>Mission Control</h1>
-          <p>Plan. Route. Build. Review. Learn.</p>
+          <h1>いま、何をつくりたい？</h1>
+          <p>
+            どのAIの・どのモデルで・どこまで作って・次に何を渡すか。
+            そこまで組んで、完成まで一緒に進む。
+          </p>
         </div>
-        <form action={actionSeedDogfood}>
-          <Button type="submit" variant="secondary">
-            Seed Dogfood Project
-          </Button>
-        </form>
+        <Link href="/how-to" className="mc-muted">
+          使い方
+        </Link>
       </header>
 
-      <div className="mc-grid-2">
-        <Panel title="Next Action">
-          {data.nextTask ? (
-            <div className="mc-stack">
-              <div className="mc-row" style={{ border: "none", padding: 0, background: "transparent" }}>
-                <div>
-                  <div className="mc-mono">{data.nextTask.code}</div>
-                  <div style={{ fontSize: 20, fontWeight: 650, marginTop: 4 }}>
-                    {data.nextTask.title}
-                  </div>
-                  <div className="mc-muted" style={{ marginTop: 6 }}>
-                    Recommended: {data.nextTask.recommendedAgent ?? "—"} /{" "}
-                    {data.nextTask.recommendedModelTier ?? "—"}
-                  </div>
-                </div>
-                <Badge tone="purple">{data.nextTask.status}</Badge>
-              </div>
-              <Link href={`/tasks/${data.nextTask.id}`}>
-                <Button>Open Task</Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="mc-stack">
-              <p className="mc-muted">No ready tasks. Seed dogfood or create a project.</p>
-              <Link href="/projects">
-                <Button variant="secondary">Go to Projects</Button>
-              </Link>
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Today">
-          <div className="mc-grid-3" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-            <div>
-              <div className="mc-muted">Tasks</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{data.today.total}</div>
-            </div>
-            <div>
-              <div className="mc-muted">Done</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{data.today.done}</div>
-            </div>
-            <div>
-              <div className="mc-muted">Running</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{data.today.running}</div>
-            </div>
-            <div>
-              <div className="mc-muted">Blocked</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{data.today.blocked}</div>
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mc-grid-2">
-        <Panel title="Blockers">
-          {data.blocked.length === 0 ? (
-            <p className="mc-muted">No blockers.</p>
-          ) : (
-            <div className="mc-list">
-              {data.blocked.map((t) => (
-                <Link key={t.id} href={`/tasks/${t.id}`} className="mc-row">
-                  <span>
-                    <span className="mc-mono">{t.code}</span> {t.title}
-                  </span>
-                  <Badge tone="red">blocked</Badge>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Running AI">
-          {data.running.length === 0 ? (
-            <p className="mc-muted">No active runs.</p>
-          ) : (
-            <div className="mc-list">
-              {data.running.map((t) => (
-                <Link key={t.id} href={`/tasks/${t.id}`} className="mc-row">
-                  <span>
-                    <span className="mc-mono">{t.code}</span> {t.title}
-                  </span>
-                  <Badge tone="purple">{t.recommendedAgent}</Badge>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </div>
-
-      <Panel title="AI Resource">
-        <div className="mc-list">
-          {data.resources.map((r) => (
-            <div key={r.agent.id} className="mc-row">
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <strong>{r.agent.name}</strong>
-                  <Badge tone={statusTone(r.status)}>{r.status.toUpperCase()}</Badge>
-                </div>
-                <div className="mc-muted" style={{ marginTop: 6 }}>
-                  Best for: {r.bestFor.join(" / ")}
-                  {r.successRate != null ? ` · Success ${r.successRate}%` : ""}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <ProgressBar
-                    value={r.todayRp}
-                    max={r.agent.dailySoftCapRp}
-                    label={`Today ${r.todayRp} / ${r.agent.dailySoftCapRp} RP`}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      <Panel title="やりたいことを書く">
+        <form action={actionCreatePlanFromIdea} className="mc-form">
+          <label>
+            自由に書いてOK
+            <textarea
+              name="idea"
+              required
+              rows={4}
+              placeholder="例: Google認証を追加したい / 在庫管理の画面を作りたい"
+            />
+          </label>
+          <PlanIntakeFields />
+          <Button type="submit">作戦をつくって、最初の一歩へ</Button>
+        </form>
+        <p className="mc-muted" style={{ margin: "12px 0 0" }}>
+          押すと、探す → つくる → 確認 → 見直す → 仕上げる、の段取りができる。
+        </p>
       </Panel>
 
-      <Panel title="Active Projects">
-        {data.activeProjects.length === 0 ? (
-          <p className="mc-muted">No projects yet.</p>
-        ) : (
+      {data.nextTask ? (
+        <Panel title="いまやる一手">
+          <div className="mc-stack">
+            <div>
+              <div className="mc-mono">{data.nextTask.code}</div>
+              <div style={{ fontSize: 22, fontWeight: 650, marginTop: 4 }}>
+                {data.nextTask.title}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 600, marginTop: 10 }}>
+                {recommendationLabel(
+                  data.nextRecommendation?.agent,
+                  data.nextRecommendation?.modelTier,
+                )}
+              </div>
+              <div className="mc-muted" style={{ marginTop: 6 }}>
+                {modelPickHint(
+                  data.nextRecommendation?.agent,
+                  data.nextRecommendation?.modelTier,
+                )}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <Badge tone="purple">
+                  {TASK_STATUS_LABEL[data.nextTask.status]}
+                </Badge>
+              </div>
+            </div>
+            <Link href={`/tasks/${data.nextTask.id}`}>
+              <Button>この作業を開く</Button>
+            </Link>
+          </div>
+        </Panel>
+      ) : (
+        <Panel title="いまやる一手">
+          <p className="mc-muted" style={{ margin: 0 }}>
+            まだない。上にやりたいことを書いて始めよう。
+          </p>
+        </Panel>
+      )}
+
+      {continuing ? (
+        <Panel title="続きから">
+          <div className="mc-row">
+            <div>
+              <div style={{ fontWeight: 600 }}>{continuing.name}</div>
+              <div className="mc-muted">{continuing.goal}</div>
+            </div>
+            <Link href={`/projects/${continuing.id}`}>
+              <Button variant="secondary">作戦を見る</Button>
+            </Link>
+          </div>
+        </Panel>
+      ) : null}
+
+      {data.blocked.length > 0 ? (
+        <Panel title="つまったもの">
           <div className="mc-list">
-            {data.activeProjects.map((p) => (
-              <Link key={p.id} href={`/projects/${p.id}`} className="mc-row">
-                <span>● {p.name}</span>
-                <span className="mc-muted">{p.progress}%</span>
+            {data.blocked.map((t) => (
+              <Link key={t.id} href={`/tasks/${t.id}`} className="mc-row">
+                <span>
+                  <span className="mc-mono">{t.code}</span> {t.title}
+                </span>
+                <Badge tone="red">つまった</Badge>
               </Link>
             ))}
           </div>
-        )}
-      </Panel>
+        </Panel>
+      ) : null}
     </>
   );
 }

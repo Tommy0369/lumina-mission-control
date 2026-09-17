@@ -1,21 +1,12 @@
 /**
- * Supabase client helpers for when remote SSOT is connected.
- * V0.1 defaults to local JSON store (`data/store.json`).
+ * @deprecated TASK-010 で `lib/supabase/` に分割した。
+ *
+ * - 環境変数: `lib/supabase/config`
+ * - ブラウザ: `lib/supabase/browser`（cookie セッション / @supabase/ssr）
+ * - サーバー: `lib/supabase/server`
+ *
+ * 旧 `createBrowserSupabase()` は localStorage セッションだったため、
+ * SSR とセッションを共有できなかった。互換のため名前だけ残す。
  */
-import { createClient } from "@supabase/supabase-js";
-
-export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
-}
-
-export function createBrowserSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error("Supabase env not configured");
-  }
-  return createClient(url, key);
-}
+export { isSupabaseConfigured, getSupabaseEnv } from "./supabase/config";
+export { getBrowserSupabase as createBrowserSupabase } from "./supabase/browser";

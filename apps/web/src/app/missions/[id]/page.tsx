@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Button, Panel, ProgressBar } from "@lumina/ui";
 import { getMission } from "@/lib/services";
-import { actionCreateTask } from "@/lib/actions";
+import { actionCreateTask, actionDeleteMission, actionUpdateMission } from "@/lib/actions";
+import { MISSION_STATUS_LABEL, RISK_LABEL, agentLabel } from "@/lib/labels";
 
 export default async function MissionDetailPage({
   params,
@@ -26,22 +27,24 @@ export default async function MissionDetailPage({
             · {mission.goal}
           </p>
         </div>
-        <Badge tone="purple">{mission.status}</Badge>
+        <Badge tone="purple">{MISSION_STATUS_LABEL[mission.status]}</Badge>
       </header>
 
       <div className="mc-grid-3">
-        <Panel title="Risk">
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{mission.risk}</div>
+        <Panel title="リスク">
+          <div style={{ fontSize: 22, fontWeight: 700 }}>
+            {RISK_LABEL[mission.risk]}
+          </div>
         </Panel>
-        <Panel title="Complexity">
+        <Panel title="複雑度">
           <div style={{ fontSize: 22, fontWeight: 700 }}>{mission.complexity}</div>
         </Panel>
-        <Panel title="Progress">
+        <Panel title="進捗">
           <ProgressBar value={mission.progress} label={`${mission.progress}%`} />
         </Panel>
       </div>
 
-      <Panel title="Tasks">
+      <Panel title="タスク">
         <div className="mc-list">
           {tasks.map((t) => (
             <Link key={t.id} href={`/tasks/${t.id}`} className="mc-row">
@@ -49,62 +52,106 @@ export default async function MissionDetailPage({
                 {t.status === "done" ? "✓" : t.status === "running" ? "●" : "○"}{" "}
                 <span className="mc-mono">{t.code}</span> {t.title}
               </span>
-              <Badge tone="neutral">{t.recommendedAgent ?? "—"}</Badge>
+              <Badge tone="neutral">{agentLabel(t.recommendedAgent)}</Badge>
             </Link>
           ))}
         </div>
       </Panel>
 
-      <Panel title="Add Task">
+      <Panel title="タスク追加">
         <form action={actionCreateTask} className="mc-form">
           <input type="hidden" name="missionId" value={mission.id} />
           <label>
-            Title
+            タイトル
             <input name="title" required />
           </label>
           <label>
-            Goal
+            ゴール
             <textarea name="goal" required rows={2} />
           </label>
           <label>
-            Complexity
-            <input name="complexity" type="number" min={0} max={10} step={0.1} defaultValue={5} />
+            複雑度
+            <input
+              name="complexity"
+              type="number"
+              min={0}
+              max={10}
+              step={0.1}
+              defaultValue={5}
+            />
           </label>
           <label>
-            Domain
+            領域
             <select name="domain" defaultValue="logic">
-              <option value="ui">ui</option>
-              <option value="db">db</option>
-              <option value="auth">auth</option>
-              <option value="security">security</option>
-              <option value="api">api</option>
-              <option value="logic">logic</option>
-              <option value="infrastructure">infrastructure</option>
+              <option value="ui">UI</option>
+              <option value="db">DB</option>
+              <option value="auth">認証</option>
+              <option value="security">セキュリティ</option>
+              <option value="api">API</option>
+              <option value="logic">ロジック</option>
+              <option value="infrastructure">インフラ</option>
             </select>
           </label>
           <label>
-            Task type
+            タスク種別
             <select name="taskType" defaultValue="implementation">
-              <option value="planning">planning</option>
-              <option value="exploration">exploration</option>
-              <option value="implementation">implementation</option>
-              <option value="debugging">debugging</option>
-              <option value="review">review</option>
-              <option value="security">security</option>
-              <option value="ui">ui</option>
+              <option value="planning">計画</option>
+              <option value="exploration">探索</option>
+              <option value="implementation">実装</option>
+              <option value="debugging">デバッグ</option>
+              <option value="review">レビュー</option>
+              <option value="security">セキュリティ</option>
+              <option value="ui">UI</option>
             </select>
           </label>
           <label>
-            Estimated files
+            想定ファイル数
             <input name="estimatedFiles" type="number" defaultValue={3} />
           </label>
           <label>
-            Context files
+            コンテキストファイル
             <textarea name="contextFiles" rows={3} />
           </label>
-          <Button type="submit">Create Task</Button>
+          <Button type="submit">タスク作成</Button>
         </form>
       </Panel>
+
+      <details>
+        <summary className="mc-muted" style={{ cursor: "pointer" }}>
+          詳しく（直す・やめる）
+        </summary>
+        <div className="mc-stack" style={{ marginTop: 12 }}>
+          <Panel title="まとまりを直す">
+            <form action={actionUpdateMission} className="mc-form">
+              <input type="hidden" name="missionId" value={mission.id} />
+              <label>
+                名前
+                <input name="title" defaultValue={mission.title} required />
+              </label>
+              <label>
+                ゴール
+                <textarea name="goal" rows={2} defaultValue={mission.goal} required />
+              </label>
+              <Button type="submit">保存する</Button>
+            </form>
+          </Panel>
+          <Panel title="このまとまりをやめる">
+            <p className="mc-muted" style={{ marginTop: 0 }}>
+              中の一歩も消える。確認のため、いまの名前を入力する。
+            </p>
+            <form action={actionDeleteMission} className="mc-form">
+              <input type="hidden" name="missionId" value={mission.id} />
+              <label>
+                名前（確認）
+                <input name="confirmTitle" placeholder={mission.title} required />
+              </label>
+              <Button type="submit" variant="secondary">
+                削除する
+              </Button>
+            </form>
+          </Panel>
+        </div>
+      </details>
     </>
   );
 }

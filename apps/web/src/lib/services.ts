@@ -5,15 +5,19 @@ import {
   resourceStatusFromUsage,
   type AgentId,
   type Domain,
+  type PlanIntake,
   type Mission,
+  type MissionStatus,
   type ModelTier,
   type Project,
+  type ProjectStatus,
   type ResourceStatus,
   type RiskLevel,
   type Run,
   type RunMode,
   type StoreSnapshot,
   type Task,
+  type TaskStatus,
   type TaskType,
 } from "@lumina/core";
 import { routeTask } from "@lumina/router";
@@ -23,9 +27,28 @@ import {
   generateTaskPrompt,
 } from "@lumina/prompts";
 import { readStore, updateStore } from "./store";
+import { resolveModelProfile } from "./labels";
+import {
+  DEFAULT_PLAN_INTAKE,
+  derivePlanFromIntake,
+  formatPlanIntakeSummary,
+  ideaSignalsFromText,
+} from "./plan-intake";
 
-function applyRouting(task: Task, store: StoreSnapshot): Task {
-  const resourceStatus = Object.fromEntries(
+function modelPickerFor(agent?: AgentId | null, tier?: ModelTier | null) {
+  const profile = resolveModelProfile(agent, tier);
+  if (!profile) return { modelName: undefined as string | undefined };
+  return {
+    modelName: profile.label,
+    pickerModel: profile.pickerModel,
+    pickerEffort: profile.pickerEffort,
+  };
+}
+
+function resourceStatusMap(
+  store: StoreSnapshot,
+): Partial<Record<AgentId, ResourceStatus>> {
+  return Object.fromEntries(
     store.aiAgents.map((a) => {
       const override = store.resourceOverrides[a.id];
       const status =
@@ -34,7 +57,49 @@ function applyRouting(task: Task, store: StoreSnapshot): Task {
       return [a.id, status];
     }),
   ) as Partial<Record<AgentId, ResourceStatus>>;
+}
 
+export interface NextRunRecommendation {
+  readonly agent?: AgentId;
+  readonly modelTier?: ModelTier;
+  readonly mode?: RunMode;
+}
+
+/**
+ * task.recommendedAgent/Tier/Mode is the original routing decision snapshot.
+ * Once a task is waiting on review, the next run must go to reviewAgent in
+ * review mode instead of repeating the implementation recommendation.
+ */
+function nextRunRecommendation(task: Task): NextRunRecommendation {
+  if (task.status === "review" && task.reviewAgent) {
+    return { agent: task.reviewAgent, modelTier: "strong", mode: "review" };
+  }
+  return {
+    agent: task.recommendedAgent,
+    modelTier: task.recommendedModelTier,
+    mode: task.recommendedMode,
+  };
+}
+
+/** 画面表示用。依頼中ならその回のAI、見直し待ちならレビュー担当。 */
+export function recommendationForTask(
+  task: Task,
+  runs: Run[] = [],
+): NextRunRecommendation {
+  const active = runs.find((run) => run.taskId === task.id && run.status === "running");
+  if (active) {
+    return { agent: active.agent, modelTier: active.modelTier, mode: active.mode };
+  }
+  return nextRunRecommendation(task);
+}
+
+function pickOpenTask(tasks: Task[]): Task | undefined {
+  return tasks
+    .slice()
+    .sort((a, b) => b.priority - a.priority || a.complexity - b.complexity)[0];
+}
+
+function applyRouting(task: Task, store: StoreSnapshot): Task {
   const decision = routeTask({
     taskType: task.taskType,
     complexity: task.complexity,
@@ -42,7 +107,8 @@ function applyRouting(task: Task, store: StoreSnapshot): Task {
     domain: task.domain,
     estimatedFiles: task.estimatedFiles,
     contextSize: task.contextSize,
-    resourceStatus,
+    resourceStatus: resourceStatusMap(store),
+    isBlocker: task.status === "blocked",
   });
 
   return {
@@ -60,12 +126,68 @@ function applyRouting(task: Task, store: StoreSnapshot): Task {
   };
 }
 
+function recalculateProgress(store: StoreSnapshot, t = nowIso()): void {
+  for (const mission of store.missions) {
+    const missionTasks = store.tasks.filter((task) => task.missionId === mission.id);
+    const done = missionTasks.filter((task) => task.status === "done").length;
+    mission.progress = missionTasks.length
+      ? Math.round((done / missionTasks.length) * 100)
+      : 0;
+    mission.status =
+      missionTasks.length > 0 && mission.progress === 100
+        ? "done"
+        : missionTasks.some((task) => task.status === "running")
+          ? "in_progress"
+          : missionTasks.some((task) => task.status === "blocked")
+            ? "blocked"
+            : mission.status === "cancelled"
+              ? "cancelled"
+              : "in_progress";
+    mission.updatedAt = t;
+  }
+
+  for (const project of store.projects) {
+    const projectTasks = store.tasks.filter((task) => task.projectId === project.id);
+    const done = projectTasks.filter((task) => task.status === "done").length;
+    project.progress = projectTasks.length
+      ? Math.round((done / projectTasks.length) * 100)
+      : 0;
+    project.updatedAt = t;
+  }
+}
+
+function removeTasks(store: StoreSnapshot, taskIds: Set<string>): void {
+  const runIds = new Set(
+    store.runs.filter((run) => taskIds.has(run.taskId)).map((run) => run.id),
+  );
+  store.tasks = store.tasks.filter((task) => !taskIds.has(task.id));
+  store.taskDependencies = store.taskDependencies.filter(
+    (dependency) =>
+      !taskIds.has(dependency.taskId) &&
+      !taskIds.has(dependency.dependsOnTaskId),
+  );
+  store.runs = store.runs.filter((run) => !runIds.has(run.id));
+  store.usageEvents = store.usageEvents.filter((event) => !runIds.has(event.runId));
+  store.handoffs = store.handoffs.filter(
+    (handoff) => !taskIds.has(handoff.taskId) && !runIds.has(handoff.runId),
+  );
+  store.contextAssets = store.contextAssets.filter(
+    (asset) => !taskIds.has(asset.taskId),
+  );
+  store.approvals = store.approvals.filter(
+    (approval) =>
+      (!approval.taskId || !taskIds.has(approval.taskId)) &&
+      (!approval.runId || !runIds.has(approval.runId)),
+  );
+}
+
 export async function getDashboard() {
   const store = await readStore();
   const activeProjects = store.projects.filter((p) => p.status === "active");
   const tasks = store.tasks;
   const running = tasks.filter((t) => t.status === "running");
   const blocked = tasks.filter((t) => t.status === "blocked");
+  const review = tasks.filter((t) => t.status === "review");
   const ready = tasks.filter((t) => t.status === "ready" || t.status === "todo");
   const doneToday = tasks.filter((t) => {
     if (t.status !== "done") return false;
@@ -73,9 +195,10 @@ export async function getDashboard() {
   });
 
   const nextTask =
-    ready.sort((a, b) => b.priority - a.priority || a.complexity - b.complexity)[0] ??
-    running[0] ??
-    null;
+    pickOpenTask(running) ?? pickOpenTask(review) ?? pickOpenTask(ready) ?? null;
+  const nextRecommendation = nextTask
+    ? recommendationForTask(nextTask, store.runs)
+    : null;
 
   const resources = store.aiAgents.map((agent) => {
     const override = store.resourceOverrides[agent.id];
@@ -106,6 +229,7 @@ export async function getDashboard() {
     workspace: store.workspace,
     activeProjects,
     nextTask,
+    nextRecommendation,
     blocked,
     running,
     today: {
@@ -139,11 +263,15 @@ export async function getProject(projectId: string) {
     .filter((m) => m.projectId === projectId)
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const tasks = store.tasks.filter((t) => t.projectId === projectId);
+  const projectRuns = store.runs.filter((run) =>
+    tasks.some((task) => task.id === run.taskId),
+  );
   const currentTask =
     tasks.find((t) => t.status === "running") ??
+    tasks.find((t) => t.status === "review") ??
     tasks.find((t) => t.status === "ready" || t.status === "todo") ??
     null;
-  return { project, missions, tasks, currentTask };
+  return { project, missions, tasks, currentTask, runs: projectRuns };
 }
 
 export async function createProject(input: {
@@ -176,6 +304,45 @@ export async function createProject(input: {
   return created;
 }
 
+export async function updateProject(
+  projectId: string,
+  input: Partial<
+    Pick<Project, "name" | "description" | "goal" | "status" | "repoUrl" | "techStack">
+  >,
+) {
+  let updated!: Project;
+  await updateStore((store) => {
+    const project = store.projects.find((item) => item.id === projectId);
+    if (!project) throw new Error("Project not found");
+    if (input.name !== undefined) project.name = input.name.trim();
+    if (input.description !== undefined) project.description = input.description;
+    if (input.goal !== undefined) project.goal = input.goal.trim();
+    if (input.status !== undefined) project.status = input.status;
+    if (input.repoUrl !== undefined) project.repoUrl = input.repoUrl || undefined;
+    if (input.techStack !== undefined) project.techStack = input.techStack;
+    if (!project.name || !project.goal) {
+      throw new Error("Project name and goal are required");
+    }
+    project.updatedAt = nowIso();
+    updated = project;
+  });
+  return updated;
+}
+
+export async function deleteProject(projectId: string, expectedName: string) {
+  await updateStore((store) => {
+    const project = store.projects.find((item) => item.id === projectId);
+    if (!project) throw new Error("Project not found");
+    if (project.name !== expectedName) throw new Error("Project delete confirmation mismatch");
+    const taskIds = new Set(
+      store.tasks.filter((task) => task.projectId === projectId).map((task) => task.id),
+    );
+    removeTasks(store, taskIds);
+    store.missions = store.missions.filter((mission) => mission.projectId !== projectId);
+    store.projects = store.projects.filter((item) => item.id !== projectId);
+  });
+}
+
 export async function createMission(input: {
   projectId: string;
   title: string;
@@ -206,6 +373,48 @@ export async function createMission(input: {
     return s;
   });
   return store.missions[store.missions.length - 1];
+}
+
+export async function updateMission(
+  missionId: string,
+  input: Partial<
+    Pick<Mission, "title" | "goal" | "status" | "priority" | "risk" | "complexity">
+  >,
+) {
+  let updated!: Mission;
+  await updateStore((store) => {
+    const mission = store.missions.find((item) => item.id === missionId);
+    if (!mission) throw new Error("Mission not found");
+    if (input.title !== undefined) mission.title = input.title.trim();
+    if (input.goal !== undefined) mission.goal = input.goal.trim();
+    if (input.status !== undefined) mission.status = input.status;
+    if (input.priority !== undefined) mission.priority = input.priority;
+    if (input.risk !== undefined) mission.risk = input.risk;
+    if (input.complexity !== undefined) mission.complexity = input.complexity;
+    if (!mission.title || !mission.goal) {
+      throw new Error("Mission title and goal are required");
+    }
+    mission.updatedAt = nowIso();
+    updated = mission;
+  });
+  return updated;
+}
+
+export async function deleteMission(missionId: string, expectedTitle: string) {
+  let projectId = "";
+  await updateStore((store) => {
+    const mission = store.missions.find((item) => item.id === missionId);
+    if (!mission) throw new Error("Mission not found");
+    if (mission.title !== expectedTitle) throw new Error("Mission delete confirmation mismatch");
+    projectId = mission.projectId;
+    const taskIds = new Set(
+      store.tasks.filter((task) => task.missionId === missionId).map((task) => task.id),
+    );
+    removeTasks(store, taskIds);
+    store.missions = store.missions.filter((item) => item.id !== missionId);
+    recalculateProgress(store);
+  });
+  return { projectId };
 }
 
 export async function createTask(input: {
@@ -261,6 +470,66 @@ export async function createTask(input: {
   return created;
 }
 
+export async function updateTask(
+  taskId: string,
+  input: Partial<
+    Pick<
+      Task,
+      | "title"
+      | "goal"
+      | "description"
+      | "status"
+      | "priority"
+      | "complexity"
+      | "risk"
+      | "taskType"
+      | "domain"
+      | "scope"
+      | "outOfScope"
+      | "acceptanceCriteria"
+      | "estimatedFiles"
+      | "contextFiles"
+    >
+  >,
+) {
+  let updated!: Task;
+  await updateStore((store) => {
+    const index = store.tasks.findIndex((item) => item.id === taskId);
+    if (index < 0) throw new Error("Task not found");
+    const task = store.tasks[index];
+    const routingChanged =
+      input.complexity !== undefined ||
+      input.risk !== undefined ||
+      input.taskType !== undefined ||
+      input.domain !== undefined ||
+      input.estimatedFiles !== undefined;
+    Object.assign(task, input);
+    task.title = task.title.trim();
+    task.goal = task.goal.trim();
+    if (!task.title || !task.goal) throw new Error("Task title and goal are required");
+    task.updatedAt = nowIso();
+    store.tasks[index] = routingChanged ? applyRouting(task, store) : task;
+    recalculateProgress(store, task.updatedAt);
+    updated = store.tasks[index];
+  });
+  return updated;
+}
+
+export async function deleteTask(taskId: string, expectedCode: string) {
+  let missionId = "";
+  let projectId = "";
+  await updateStore((store) => {
+    const task = store.tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error("Task not found");
+    if (task.code !== expectedCode) throw new Error("Task delete confirmation mismatch");
+    missionId = task.missionId;
+    projectId = task.projectId;
+    removeTasks(store, new Set([taskId]));
+    recalculateProgress(store);
+  });
+  return { missionId, projectId };
+}
+
 export async function getTask(taskId: string) {
   const store = await readStore();
   const task = store.tasks.find((t) => t.id === taskId);
@@ -271,7 +540,13 @@ export async function getTask(taskId: string) {
     .filter((r) => r.taskId === taskId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const handoffs = store.handoffs.filter((h) => h.taskId === taskId);
-  const prompt = generateTaskPrompt({ task });
+  const prompt = generateTaskPrompt({
+    task,
+    ...modelPickerFor(task.recommendedAgent, task.recommendedModelTier),
+    planContext: project?.planIntake
+      ? formatPlanIntakeSummary(project.planIntake)
+      : undefined,
+  });
   const reviewPrompt =
     task.reviewRequired && task.reviewAgent === "codex"
       ? generateReviewPrompt({
@@ -306,6 +581,7 @@ export async function getTask(taskId: string) {
     reviewPrompt,
     executionBlocked: sizeDecision.executionBlocked,
     taskSize: sizeDecision.taskSize,
+    nextRecommendation: recommendationForTask(task, runs),
   };
 }
 
@@ -329,34 +605,62 @@ export async function startRun(input: {
   await updateStore((store) => {
     const task = store.tasks.find((t) => t.id === input.taskId);
     if (!task) throw new Error("Task not found");
+    if (task.status === "done" || task.status === "cancelled") {
+      throw new Error("Completed or cancelled tasks cannot start a new run");
+    }
+    if (store.runs.some((candidate) => candidate.taskId === task.id && candidate.status === "running")) {
+      throw new Error("Task already has a running run");
+    }
+    if (!(["todo", "ready", "blocked", "review"] as TaskStatus[]).includes(task.status)) {
+      throw new Error(`Task cannot start from status: ${task.status}`);
+    }
     const decision = routeTask({
       taskType: task.taskType,
       complexity: task.complexity,
       risk: task.risk,
       domain: task.domain,
       estimatedFiles: task.estimatedFiles,
+      contextSize: task.contextSize,
+      resourceStatus: resourceStatusMap(store),
+      isBlocker: task.status === "blocked",
     });
     if (decision.executionBlocked) {
       throw new Error("TASK TOO LARGE — split before running");
     }
 
+    const next = nextRunRecommendation(task);
     const agent =
       input.useRecommended !== false
-        ? (task.recommendedAgent ?? decision.agent)
-        : (input.agent ?? task.recommendedAgent ?? decision.agent);
+        ? (next.agent ?? decision.agent)
+        : (input.agent ?? next.agent ?? decision.agent);
     const modelTier =
       input.useRecommended !== false
-        ? (task.recommendedModelTier ?? decision.modelTier)
-        : (input.modelTier ?? task.recommendedModelTier ?? decision.modelTier);
+        ? (next.modelTier ?? decision.modelTier)
+        : (input.modelTier ?? next.modelTier ?? decision.modelTier);
     const mode =
-      input.mode ?? task.recommendedMode ?? decision.mode ?? "implementation";
+      input.mode ?? next.mode ?? decision.mode ?? "implementation";
 
-    const prompt = generateTaskPrompt({
-      task,
-      agent,
-      modelTier,
-      mode,
-    });
+    const picker = modelPickerFor(agent, modelTier);
+    const project = store.projects.find((p) => p.id === task.projectId);
+    const planContext = project?.planIntake
+      ? formatPlanIntakeSummary(project.planIntake)
+      : undefined;
+    const prompt =
+      mode === "review"
+        ? generateReviewPrompt({
+            taskCode: task.code,
+            taskTitle: task.title,
+            pickerModel: picker.pickerModel,
+            pickerEffort: picker.pickerEffort,
+          })
+        : generateTaskPrompt({
+            task,
+            agent,
+            modelTier,
+            mode,
+            ...picker,
+            planContext,
+          });
 
     const t = nowIso();
     const runCount = store.runs.filter((r) => r.taskId === task.id).length + 1;
@@ -405,6 +709,17 @@ export async function completeRun(input: {
     if (!run) throw new Error("Run not found");
     const task = store.tasks.find((t) => t.id === run.taskId);
     if (!task) throw new Error("Task not found");
+    if (run.status !== "running") {
+      const existingHandoff = store.handoffs.find((handoff) => handoff.runId === run.id);
+      if (existingHandoff && run.result === input.result) {
+        handoffId = existingHandoff.id;
+        return;
+      }
+      throw new Error(`Run cannot complete from status: ${run.status}`);
+    }
+    if (task.status !== "running") {
+      throw new Error(`Task/run state mismatch: ${task.status}/${run.status}`);
+    }
     const t = nowIso();
 
     run.status = input.result === "success" ? "success" : "failure";
@@ -438,22 +753,25 @@ export async function completeRun(input: {
       provider: run.agent,
       model: run.modelTier,
       resourcePoints: rp,
-      source: "estimated",
+      source: input.resourcePointsActual === undefined ? "estimated" : "manual",
       recordedAt: t,
     });
 
-    const nextAgent =
-      input.result === "success" && task.reviewRequired
-        ? task.reviewAgent
-        : input.result === "failure"
-          ? run.agent
-          : undefined;
-    const nextAction =
-      input.result === "success" && task.reviewRequired
-        ? "Review current git diff only."
-        : input.result === "failure"
-          ? "Retry with narrowed scope or escalate agent."
-          : "Mark task done or pick next task.";
+    // A run in review mode IS the review — do not send it back for review again.
+    const isReviewRun = run.mode === "review";
+    const needsReview =
+      input.result === "success" && task.reviewRequired && !isReviewRun;
+
+    const nextAgent = needsReview
+      ? task.reviewAgent
+      : input.result === "failure"
+        ? run.agent
+        : undefined;
+    const nextAction = needsReview
+      ? "現在の git diff だけをレビューする。"
+      : input.result === "failure"
+        ? "スコープを絞って再試行するか、エージェントを上げる。"
+        : "タスク完了にするか、次のタスクへ進む。";
 
     const risks = input.resultNotes
       ? [input.resultNotes]
@@ -475,6 +793,7 @@ export async function completeRun(input: {
         taskCode: task.code,
         worker: run.agent,
         modelTier: run.modelTier,
+        modelName: modelPickerFor(run.agent, run.modelTier).modelName,
         result: input.result === "success" ? "SUCCESS" : "FAILURE",
         changedFiles: run.changedFiles,
         tests: run.testsSummary ?? "",
@@ -485,7 +804,7 @@ export async function completeRun(input: {
       changedFiles: run.changedFiles,
       tests: run.testsSummary ?? "",
       risks,
-      blockers: input.result === "failure" ? ["Run failed — see notes"] : [],
+      blockers: input.result === "failure" ? ["実行失敗 — メモを確認"] : [],
       nextAgent,
       nextAction,
       reviewPrompt,
@@ -495,35 +814,13 @@ export async function completeRun(input: {
     handoffId = handoff.id;
 
     if (input.result === "success") {
-      task.status = task.reviewRequired ? "review" : "done";
+      task.status = needsReview ? "review" : "done";
     } else {
       task.status = "blocked";
     }
     task.updatedAt = t;
 
-    // Update mission/project progress roughly
-    const missionTasks = store.tasks.filter((x) => x.missionId === task.missionId);
-    const missionDone = missionTasks.filter((x) => x.status === "done").length;
-    const mission = store.missions.find((m) => m.id === task.missionId);
-    if (mission) {
-      mission.progress = Math.round((missionDone / missionTasks.length) * 100);
-      mission.status =
-        mission.progress === 100
-          ? "done"
-          : missionTasks.some((x) => x.status === "running")
-            ? "in_progress"
-            : missionTasks.some((x) => x.status === "blocked")
-              ? "blocked"
-              : "in_progress";
-      mission.updatedAt = t;
-    }
-    const projectTasks = store.tasks.filter((x) => x.projectId === task.projectId);
-    const project = store.projects.find((p) => p.id === task.projectId);
-    if (project && projectTasks.length) {
-      const done = projectTasks.filter((x) => x.status === "done").length;
-      project.progress = Math.round((done / projectTasks.length) * 100);
-      project.updatedAt = t;
-    }
+    recalculateProgress(store, t);
   });
   return { handoffId };
 }
@@ -584,7 +881,9 @@ export async function getResources() {
 
 export async function getRoutingRules() {
   const store = await readStore();
-  return store.routingRules.sort((a, b) => b.priority - a.priority);
+  return store.routingRules
+    .slice()
+    .sort((a, b) => b.priority - a.priority);
 }
 
 export async function getModelProfiles() {
@@ -621,10 +920,10 @@ export async function seedDogfoodProject() {
       id: createId("proj"),
       workspaceId: s.workspace.id,
       name: "LUMINA Mission Control",
-      description: "AI Development Resource Orchestrator — dogfood project",
-      goal: "Plan. Route. Build. Review. Learn. — V0.1 Manual Orchestration",
+      description: "AI開発リソース管制塔 — Dogfood用プロジェクト",
+      goal: "考える。振り分ける。作る。検証する。学習する。— V0.1 手動オーケストレーション",
       status: "active",
-      repoUrl: "https://github.com/local/lumina-mission-control",
+      repoUrl: "https://github.com/Tommy0369/lumina-mission-control",
       defaultBranch: "main",
       localPathHint: "~/projects/lumina-mission-control",
       techStack: ["Next.js", "Supabase", "TypeScript", "pnpm"],
@@ -637,8 +936,8 @@ export async function seedDogfoodProject() {
     const mission: Mission = {
       id: createId("mis"),
       projectId: project.id,
-      title: "V0.1 Foundation",
-      goal: "Ship Manual Orchestration loop",
+      title: "V0.1 基盤",
+      goal: "手動オーケストレーションの一周を通す",
       status: "in_progress",
       priority: 100,
       risk: "medium",
@@ -661,8 +960,8 @@ export async function seedDogfoodProject() {
       contextFiles: string[];
     }> = [
       {
-        title: "Architecture",
-        goal: "Define monorepo, SSOT, and Manual Orchestration boundaries",
+        title: "アーキテクチャ",
+        goal: "monorepo・正本・手動オーケストレーションの境界を確定する",
         complexity: 7,
         domain: "infrastructure",
         taskType: "planning",
@@ -671,8 +970,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["docs/architecture/product-brief.md", "AGENTS.md"],
       },
       {
-        title: "Database Review",
-        goal: "Review migrations and seed for V0.1 schema",
+        title: "データベースレビュー",
+        goal: "V0.1スキーマのマイグレーションとseedをレビューする",
         complexity: 6,
         domain: "db",
         taskType: "review",
@@ -681,8 +980,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["supabase/migrations/001_init.sql"],
       },
       {
-        title: "UI Prototype / Dashboard",
-        goal: "Build Dashboard with NEXT ACTION first",
+        title: "UIプロトタイプ / ダッシュボード",
+        goal: "次のアクションを最優先にしたダッシュボードを作る",
         complexity: 5,
         domain: "ui",
         taskType: "ui",
@@ -691,8 +990,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["apps/web/src/app/page.tsx"],
       },
       {
-        title: "AI Router",
-        goal: "Implement rule-based agent/tier routing",
+        title: "AIルーター",
+        goal: "ルールベースのエージェント/帯ルーティングを実装する",
         complexity: 7,
         domain: "logic",
         taskType: "implementation",
@@ -701,8 +1000,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["packages/router/src/route.ts"],
       },
       {
-        title: "Router Review",
-        goal: "Independent review of routing rules",
+        title: "ルーターレビュー",
+        goal: "ルーティングルールを独立レビューする",
         complexity: 5,
         domain: "logic",
         taskType: "review",
@@ -711,8 +1010,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["packages/router/src/route.ts"],
       },
       {
-        title: "Prompt Engine",
-        goal: "Generate Task/Review/Handoff prompts",
+        title: "プロンプトエンジン",
+        goal: "タスク/レビュー/引き継ぎプロンプトを生成する",
         complexity: 6,
         domain: "logic",
         taskType: "implementation",
@@ -721,8 +1020,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["packages/prompts/src/generate.ts"],
       },
       {
-        title: "UI Integration",
-        goal: "Wire Task Detail Run/Handoff loop",
+        title: "UI統合",
+        goal: "タスク詳細の実行・引き継ぎループをつなぐ",
         complexity: 6,
         domain: "ui",
         taskType: "implementation",
@@ -731,8 +1030,8 @@ export async function seedDogfoodProject() {
         contextFiles: ["apps/web/src/app/tasks"],
       },
       {
-        title: "Final Audit",
-        goal: "Audit V0.1 against completion criteria",
+        title: "最終監査",
+        goal: "V0.1完成条件に対して監査する",
         complexity: 6,
         domain: "security",
         taskType: "review",
@@ -757,12 +1056,12 @@ export async function seedDogfoodProject() {
         risk: spec.risk,
         taskType: spec.taskType,
         domain: spec.domain,
-        scope: "Mission Control V0.1 scope only",
-        outOfScope: "Local Runner, ML routing, billing, team ACL",
+        scope: "Mission Control V0.1 の範囲のみ",
+        outOfScope: "Local Runner、MLルーティング、課金、チーム権限",
         acceptanceCriteria: [
-          "Matches V0.1 plan",
-          "No unrelated scope",
-          "Document handoff",
+          "V0.1計画に沿っている",
+          "無関係なスコープを入れない",
+          "引き継ぎを残す",
         ],
         estimatedFiles: spec.estimatedFiles,
         contextFiles: spec.contextFiles,
@@ -778,4 +1077,172 @@ export async function seedDogfoodProject() {
 
   const next = await readStore();
   return next.projects.find((p) => p.name === "LUMINA Mission Control")!;
+}
+
+/**
+ * 「やりたいこと」から作戦（project + mission + 段取りtasks）を一括生成。
+ * ルールベース。一般人向けの定番5段。
+ */
+export async function createPlanFromIdea(input: {
+  idea: string;
+  intake?: PlanIntake;
+}) {
+  const idea = input.idea.trim();
+  if (!idea) throw new Error("やりたいことを書いてください");
+
+  const intake = input.intake ?? DEFAULT_PLAN_INTAKE;
+  const signals = ideaSignalsFromText(idea);
+  const derived = derivePlanFromIntake(idea, intake);
+  const { looksAuth, looksUi, looksDb } = signals;
+  const baseDomain = derived.domain;
+
+  let projectId = "";
+  let firstTaskId = "";
+
+  await updateStore((s) => {
+    const t = nowIso();
+    const shortName =
+      idea.length > 40 ? `${idea.slice(0, 40)}…` : idea;
+
+    const project: Project = {
+      id: createId("proj"),
+      workspaceId: s.workspace.id,
+      name: shortName,
+      description: idea,
+      goal: idea,
+      status: "active",
+      defaultBranch: "main",
+      techStack: [],
+      progress: 0,
+      planIntake: intake,
+      createdAt: t,
+      updatedAt: t,
+    };
+    s.projects.push(project);
+    projectId = project.id;
+
+    const mission: Mission = {
+      id: createId("mis"),
+      projectId: project.id,
+      title: "完成までの作戦",
+      goal: idea,
+      status: "in_progress",
+      priority: 100 + derived.priorityBonus,
+      risk: derived.missionRisk,
+      complexity: derived.missionComplexity,
+      progress: 0,
+      sortOrder: 0,
+      createdAt: t,
+      updatedAt: t,
+    };
+    s.missions.push(mission);
+
+    const rawSteps: Array<{
+      title: string;
+      goal: string;
+      taskType: TaskType;
+      domain: Domain;
+      complexity: number;
+      risk: RiskLevel;
+      estimatedFiles: number;
+      scope: string;
+      outOfScope: string;
+    }> = [
+      {
+        title: "場所を探す",
+        goal: `「${idea}」に関係するコードの場所と現状を把握する`,
+        taskType: "exploration",
+        domain: baseDomain,
+        complexity: 3,
+        risk: "low",
+        estimatedFiles: 3,
+        scope: "調査とメモまで。大きな実装はしない",
+        outOfScope: "本番変更、無関係なリファクタ",
+      },
+      {
+        title: "本体をつくる",
+        goal: `「${idea}」の中心部分を実装する`,
+        taskType: "implementation",
+        domain: looksAuth ? "auth" : looksDb ? "db" : baseDomain,
+        complexity: looksAuth || looksDb ? 7 : looksUi ? 5 : 6,
+        risk: looksAuth ? "high" : "medium",
+        estimatedFiles: looksAuth || looksDb ? 6 : 4,
+        scope: "ゴールに必要な実装のみ",
+        outOfScope: "別機能の追加、大規模リファクタ",
+      },
+      {
+        title: "自分で確認する",
+        goal: "動くか・壊れていないかを手元で確認する",
+        taskType: "testing",
+        domain: "logic",
+        complexity: 3,
+        risk: "low",
+        estimatedFiles: 2,
+        scope: "動作確認と簡単なテスト",
+        outOfScope: "新機能の追加",
+      },
+      {
+        title: "見直す",
+        goal: "差分だけを見直し、穴とリスクを見つける",
+        taskType: "review",
+        domain: looksAuth ? "security" : "logic",
+        complexity: 5,
+        risk: looksAuth ? "high" : "medium",
+        estimatedFiles: 4,
+        scope: "git diff のレビューのみ",
+        outOfScope: "全面書き直し",
+      },
+      {
+        title: "直して仕上げる",
+        goal: "見直しで出た点を直し、完成にする",
+        taskType: "implementation",
+        domain: baseDomain === "ui" ? "ui" : "logic",
+        complexity: 4,
+        risk: "low",
+        estimatedFiles: 3,
+        scope: "指摘への対応のみ",
+        outOfScope: "別スコープの拡張",
+      },
+    ];
+    const steps = rawSteps.map((step) => derived.adjustStep(step));
+
+    steps.forEach((step, i) => {
+      let task: Task = {
+        id: createId("task"),
+        missionId: mission.id,
+        projectId: project.id,
+        code: createCode("TASK", s.tasks.length + 1),
+        title: step.title,
+        description: step.goal,
+        goal: step.goal,
+        status: i === 0 ? "ready" : "todo",
+        priority: 100 - i + derived.priorityBonus,
+        complexity: step.complexity,
+        risk: step.risk,
+        taskType: step.taskType,
+        domain: step.domain,
+        scope: step.scope,
+        outOfScope: step.outOfScope,
+        acceptanceCriteria: [
+          "ゴールを満たす",
+          "触らないことに手を出さない",
+          "申し送りを残す",
+        ],
+        estimatedFiles: step.estimatedFiles,
+        contextFiles: [],
+        contextSize: "small",
+        routingReasons: [],
+        createdAt: t,
+        updatedAt: t,
+      };
+      task = applyRouting(task, s);
+      task.routingReasons = [
+        ...new Set([...task.routingReasons, ...derived.intakeRoutingReasons]),
+      ];
+      if (i === 0) firstTaskId = task.id;
+      s.tasks.push(task);
+    });
+  });
+
+  return { projectId, firstTaskId };
 }

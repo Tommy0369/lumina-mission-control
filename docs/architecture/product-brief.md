@@ -1,45 +1,77 @@
-# Product Brief — LUMINA AI Mission Control
+# LUMINA — 伴走パートナー
 
-## One-liner
+## ひとことで
 
-「やりたいこと」を入力すると、開発計画を分解し、どのAIに・どのモデルで・何を・どこまでやらせるかを可視化し、AI同士の引き継ぎまで管理する開発管制塔。
+やりたいことを書くと、  
+**どのAIの・どのモデルで・どこまで作って・次のAIに何を渡すか** をデザインし、  
+完成まで伴走してくれる。
 
-## Core principles
+## 成功の感覚
 
-1. プロジェクトは共有する
-2. タスクの記憶は分離する
-3. モデルは仕事に合わせて変える
-4. AI間の引き継ぎは構造化する
-5. 高性能AIは難しい判断に集中させる
+- 朝開いて迷わない
+- 「いまこれやれ」が見える
+- 終わったら「次はこれ」が出る
+- 専門用語を覚えなくていい
 
-## Initial agents
+## 体験の一本道
 
-- ChatGPT / LUMINA — Strategist / PM / Orchestrator
-- Cursor — Explorer / Daily Developer
-- Claude Code — Senior Builder / Architect
-- Codex — Reviewer / Debugger / Independent Engineer
+```text
+やりたいことを書く
+  ↓
+作戦が出る（誰が・どこまで・次は誰）
+  ↓
+いまの一歩だけ開く
+  ↓
+依頼文をコピーして外部AIでやる
+  ↓
+できた / つまった を押す
+  ↓
+申し送りと「次の一歩」が出る
+  ↓
+完成まで繰り返す
+```
 
-## V0.1 scope
+## 用語（画面）
 
-Manual Orchestration only:
+| 内部 | 画面で言うこと |
+|------|----------------|
+| Project | つくっているもの |
+| Mission | まとまり |
+| Task | いまの作業 / 一歩 |
+| Run | この回の依頼 |
+| Handoff | 申し送り |
+| Agent / Model Tier | おすすめのAI / モデルと仕事量 |
+| Start Run | この作業を始める |
+| Complete Run | できた / つまった |
 
-- Project / Mission / Task CRUD
-- Rule-based AI Router + Model Tier
-- Prompt generation + copy
-- Manual Run start/finish
-- Handoff + next AI
-- Resource Points recording
+日常画面に出さない: Mission Control / Router / RP / Dogfood / Resource Points
 
-Out of scope: Local Runner, ML routing, billing, team ACL, Notion/Sheets sync, native app.
+## V0.1 の範囲
 
-## Concept
+- やりたいことを書いて作戦をつくる（Create）
+- つくっているもの・いまの一歩を読む（Read）
+- 詳しくから名前・ゴールを直す（Update）
+- 詳しくから確認入力してやめる（Delete）
+- 一歩の進みは Run（始める / できた / つまった）。手でステータスを書き換えない
+- データはローカル JSON。Supabase スキーマは正本だが、接続はまだ
 
-**Plan. Route. Build. Review. Learn.**
+## エージェントの役割（人の言葉）
 
-日本語: **考える。振り分ける。作る。検証する。学習する。**
+- ChatGPT / LUMINA — 作戦を立てる
+- Cursor — 探す・軽い実装・直し
+- Claude Code — 難しい本体づくり
+- Codex — 見直し・独立したチェック
 
-## Ultimate question
+## 設計原則
+
+1. つくっているものは共有する
+2. 作業の記憶は一歩ごとに分ける
+3. AIの強さは仕事に合わせる
+4. 申し送りは文章で残す
+5. 強いAIは難しいところだけ
+
+## 究極の問い
 
 従来: どのAIが一番賢い？
 
-Mission Control: この成果を完成させるために必要な最小AI計算資源は何か？
+LUMINA: 完成までに必要な、いちばんムダのないAIの使い方は何か？

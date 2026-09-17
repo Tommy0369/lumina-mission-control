@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button, Panel, ProgressBar } from "@lumina/ui";
 import { listProjects } from "@/lib/services";
-import { actionCreateProject } from "@/lib/actions";
+import { actionCreatePlanFromIdea } from "@/lib/actions";
 
 export default async function ProjectsPage() {
   const projects = await listProjects();
@@ -10,58 +10,48 @@ export default async function ProjectsPage() {
     <>
       <header className="mc-header">
         <div>
-          <h1>Projects</h1>
-          <p>What are you building?</p>
+          <h1>つくっているもの</h1>
+          <p>完成させたいものの一覧</p>
         </div>
+        <Link href="/">
+          <Button variant="secondary">新しく始める</Button>
+        </Link>
       </header>
 
-      <div className="mc-grid-2">
-        <Panel title="Active">
-          {projects.length === 0 ? (
-            <p className="mc-muted">No projects. Create one to start.</p>
-          ) : (
-            <div className="mc-list">
-              {projects.map((p) => (
-                <Link key={p.id} href={`/projects/${p.id}`} className="mc-row">
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{p.name}</div>
-                    <div className="mc-muted">{p.goal}</div>
-                  </div>
-                  <div style={{ width: 120 }}>
-                    <ProgressBar value={p.progress} />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
+      <Panel title="一覧">
+        {projects.length === 0 ? (
+          <div className="mc-stack">
+            <p className="mc-muted">まだない。ホームでやりたいことを書こう。</p>
+            <Link href="/">
+              <Button>ホームへ</Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="mc-list">
+            {projects.map((p) => (
+              <Link key={p.id} href={`/projects/${p.id}`} className="mc-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>{p.name}</div>
+                  <div className="mc-muted">{p.goal}</div>
+                </div>
+                <div style={{ width: 120 }}>
+                  <ProgressBar value={p.progress} />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Panel>
 
-        <Panel title="Create Project">
-          <form action={actionCreateProject} className="mc-form">
-            <label>
-              What are you building?
-              <input name="name" required placeholder="Inventory AI" />
-            </label>
-            <label>
-              Goal
-              <textarea name="goal" required rows={3} placeholder="統合する業務・成果" />
-            </label>
-            <label>
-              Description
-              <textarea name="description" rows={2} />
-            </label>
-            <label>
-              Repo URL
-              <input name="repoUrl" placeholder="https://github.com/..." />
-            </label>
-            <label>
-              Tech stack (comma separated)
-              <input name="techStack" placeholder="Next.js, Supabase" />
-            </label>
-            <Button type="submit">Create</Button>
-          </form>
-        </Panel>
-      </div>
+      <Panel title="ここから新しく始める">
+        <form action={actionCreatePlanFromIdea} className="mc-form">
+          <label>
+            やりたいこと
+            <textarea name="idea" required rows={3} />
+          </label>
+          <Button type="submit">作戦をつくる</Button>
+        </form>
+      </Panel>
     </>
   );
 }

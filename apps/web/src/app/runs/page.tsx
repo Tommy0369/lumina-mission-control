@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge, Panel } from "@lumina/ui";
 import { listRuns } from "@/lib/services";
+import { RUN_STATUS_LABEL, recommendationLabel } from "@/lib/labels";
 
 export default async function RunsPage() {
   const rows = await listRuns();
@@ -9,30 +10,32 @@ export default async function RunsPage() {
     <>
       <header className="mc-header">
         <div>
-          <h1>Runs</h1>
-          <p>TASK と AI実行を分離して測る</p>
+          <h1>依頼の履歴</h1>
+          <p>外部AIに頼んだ回数の記録（詳しく）</p>
         </div>
       </header>
-      <Panel title="History">
+      <Panel title="履歴">
         <div className="mc-list">
           {rows.length === 0 ? (
-            <p className="mc-muted">No runs yet.</p>
+            <p className="mc-muted">まだない。</p>
           ) : (
             rows.map(({ run, task, handoff }) => (
               <div key={run.id} className="mc-row">
                 <div>
                   <div>
-                    <span className="mc-mono">{run.code}</span>{" "}
                     {task ? (
-                      <Link href={`/tasks/${task.id}`}>{task.code}</Link>
+                      <Link href={`/tasks/${task.id}`}>{task.title}</Link>
                     ) : (
                       "—"
-                    )}{" "}
-                    · {run.agent} / {run.modelTier} / {run.mode}
+                    )}
+                  </div>
+                  <div style={{ fontWeight: 600, marginTop: 2 }}>
+                    {recommendationLabel(run.agent, run.modelTier)}
                   </div>
                   <div className="mc-muted">
-                    RP {run.resourcePointsActual ?? run.resourcePointsEstimated}
-                    {handoff?.nextAgent ? ` · next ${handoff.nextAgent}` : ""}
+                    {handoff?.nextAgent
+                      ? `次のAI: ${handoff.nextAgent}`
+                      : "申し送りなし"}
                   </div>
                 </div>
                 <Badge
@@ -44,7 +47,11 @@ export default async function RunsPage() {
                         : "purple"
                   }
                 >
-                  {run.status}
+                  {RUN_STATUS_LABEL[run.status] === "成功"
+                    ? "できた"
+                    : RUN_STATUS_LABEL[run.status] === "失敗"
+                      ? "つまった"
+                      : RUN_STATUS_LABEL[run.status]}
                 </Badge>
               </div>
             ))

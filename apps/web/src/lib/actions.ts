@@ -2,15 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { parsePlanIntake } from "./plan-intake";
 import {
   completeRun,
   createMission,
+  createPlanFromIdea,
   createProject,
   createTask,
+  deleteMission,
+  deleteProject,
+  deleteTask,
   recomputeTaskRouting,
   seedDogfoodProject,
   setResourceManual,
   startRun,
+  updateMission,
+  updateProject,
+  updateTask,
 } from "./services";
 import type {
   AgentId,
@@ -21,6 +29,23 @@ import type {
   RunMode,
   TaskType,
 } from "@lumina/core";
+
+export async function actionCreatePlanFromIdea(formData: FormData) {
+  const idea = String(formData.get("idea") || "").trim();
+  const intake = parsePlanIntake({
+    touchSurface: String(formData.get("touchSurface") || ""),
+    productionExposure: String(formData.get("productionExposure") || ""),
+    deadline: String(formData.get("deadline") || ""),
+  });
+  const { projectId, firstTaskId } = await createPlanFromIdea({ idea, intake });
+  revalidatePath("/");
+  revalidatePath("/projects");
+  revalidatePath(`/projects/${projectId}`);
+  if (firstTaskId) {
+    redirect(`/tasks/${firstTaskId}`);
+  }
+  redirect(`/projects/${projectId}`);
+}
 
 export async function actionCreateProject(formData: FormData) {
   const project = await createProject({
@@ -140,6 +165,76 @@ export async function actionSeedDogfood() {
   revalidatePath("/projects");
   revalidatePath(`/projects/${project.id}`);
   redirect(`/projects/${project.id}`);
+}
+
+export async function actionUpdateMission(formData: FormData) {
+  const missionId = String(formData.get("missionId"));
+  const updated = await updateMission(missionId, {
+    title: String(formData.get("title") || ""),
+    goal: String(formData.get("goal") || ""),
+  });
+  revalidatePath("/");
+  revalidatePath("/missions");
+  revalidatePath(`/missions/${missionId}`);
+  revalidatePath(`/projects/${updated.projectId}`);
+}
+
+export async function actionDeleteMission(formData: FormData) {
+  const missionId = String(formData.get("missionId"));
+  const { projectId } = await deleteMission(
+    missionId,
+    String(formData.get("confirmTitle") || ""),
+  );
+  revalidatePath("/");
+  revalidatePath("/missions");
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}`);
+}
+
+export async function actionUpdateProject(formData: FormData) {
+  const projectId = String(formData.get("projectId"));
+  await updateProject(projectId, {
+    name: String(formData.get("name") || ""),
+    goal: String(formData.get("goal") || ""),
+    description: String(formData.get("description") || ""),
+  });
+  revalidatePath("/");
+  revalidatePath("/projects");
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function actionDeleteProject(formData: FormData) {
+  const projectId = String(formData.get("projectId"));
+  await deleteProject(projectId, String(formData.get("confirmName") || ""));
+  revalidatePath("/");
+  revalidatePath("/projects");
+  redirect("/projects");
+}
+
+export async function actionUpdateTask(formData: FormData) {
+  const taskId = String(formData.get("taskId"));
+  const updated = await updateTask(taskId, {
+    title: String(formData.get("title") || ""),
+    goal: String(formData.get("goal") || ""),
+    scope: String(formData.get("scope") || ""),
+    outOfScope: String(formData.get("outOfScope") || ""),
+  });
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/projects/${updated.projectId}`);
+}
+
+export async function actionDeleteTask(formData: FormData) {
+  const taskId = String(formData.get("taskId"));
+  const { projectId } = await deleteTask(
+    taskId,
+    String(formData.get("confirmCode") || ""),
+  );
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}`);
 }
 
 export async function actionSetResource(formData: FormData) {

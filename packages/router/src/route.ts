@@ -98,7 +98,7 @@ export function routeTask(input: RouteInput): RouteDecision {
 
   if (input.taskType === "review" || input.taskType === "security") {
     agent = "codex";
-    modelTier = complexity >= 6 ? "strong" : "balanced";
+    modelTier = "strong";
     reason.push(input.taskType);
   } else if (input.taskType === "planning") {
     agent = "chatgpt_lumina";
@@ -155,11 +155,18 @@ export function routeTask(input: RouteInput): RouteDecision {
     reviewAgent = reviewAgent ?? "codex";
   }
 
-  // Resource pressure: RED → prefer Cursor unless blocker
+  const isReviewWork =
+    input.taskType === "review" || input.taskType === "security";
+
+  // Resource pressure: RED → prefer Cursor unless blocker or independent review
   const agentStatus = resource[agent];
   if (agentStatus === "red") {
-    if (input.isBlocker) {
-      reason.push("resource_red_but_blocker");
+    if (input.isBlocker || isReviewWork) {
+      reason.push(
+        isReviewWork && !input.isBlocker
+          ? "resource_red_keep_reviewer"
+          : "resource_red_but_blocker",
+      );
     } else if (agent !== "cursor") {
       reason.push("resource_red_reroute_cursor");
       agent = "cursor";
@@ -168,7 +175,12 @@ export function routeTask(input: RouteInput): RouteDecision {
         reason.push("high_complexity_under_resource_pressure");
       }
     }
-  } else if (agentStatus === "yellow" && modelTier === "strong" && complexity < 7) {
+  } else if (
+    agentStatus === "yellow" &&
+    modelTier === "strong" &&
+    complexity < 7 &&
+    !isReviewWork
+  ) {
     modelTier = "balanced";
     reason.push("resource_yellow_limit_strong");
   }

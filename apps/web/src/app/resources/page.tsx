@@ -1,7 +1,7 @@
-import { Badge, Panel, ProgressBar } from "@lumina/ui";
+import { Badge, Button, Panel, ProgressBar } from "@lumina/ui";
 import { getResources } from "@/lib/services";
 import { actionSetResource } from "@/lib/actions";
-import { Button } from "@lumina/ui";
+import { RESOURCE_STATUS_LABEL } from "@/lib/labels";
 
 function tone(status: string) {
   if (status === "green") return "green" as const;
@@ -16,8 +16,8 @@ export default async function ResourcesPage() {
     <>
       <header className="mc-header">
         <div>
-          <h1>AI Resources</h1>
-          <p>Resource Points — not raw tokens alone</p>
+          <h1>使いすぎ（詳しく）</h1>
+          <p>普段は見なくていい。強いAIを使いすぎてないかのメモ。</p>
         </div>
       </header>
 
@@ -26,19 +26,23 @@ export default async function ResourcesPage() {
           <Panel
             key={r.agent.id}
             title={r.agent.name}
-            actions={<Badge tone={tone(r.status)}>{r.status.toUpperCase()}</Badge>}
+            actions={
+              <Badge tone={tone(r.status)}>
+                {RESOURCE_STATUS_LABEL[r.status]}
+              </Badge>
+            }
           >
             <div className="mc-grid-3">
               <div>
-                <div className="mc-muted">Today</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{r.todayRp} RP</div>
+                <div className="mc-muted">今日</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{r.todayRp}</div>
               </div>
               <div>
-                <div className="mc-muted">Week</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{r.weekRp} RP</div>
+                <div className="mc-muted">今週</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{r.weekRp}</div>
               </div>
               <div>
-                <div className="mc-muted">Success</div>
+                <div className="mc-muted">うまくいった率</div>
                 <div style={{ fontSize: 24, fontWeight: 700 }}>
                   {r.successRate == null ? "—" : `${r.successRate}%`}
                 </div>
@@ -47,35 +51,31 @@ export default async function ResourcesPage() {
             <ProgressBar
               value={r.todayRp}
               max={r.agent.dailySoftCapRp}
-              label={`Soft cap ${r.agent.dailySoftCapRp} RP/day · retry avg ${r.avgRetry}`}
+              label={`目安上限 ${r.agent.dailySoftCapRp} / 日`}
             />
-            <div className="mc-muted">Best for: {r.agent.bestFor.join(" / ")}</div>
-            <div className="mc-muted">
-              Model tiers:{" "}
-              {r.profiles.map((p) => `${p.tier}=${p.label}`).join(" · ")}
-            </div>
+            <div className="mc-muted">得意: {r.agent.bestFor.join(" / ")}</div>
             <form action={actionSetResource} className="mc-form" style={{ marginTop: 8 }}>
               <input type="hidden" name="agentId" value={r.agent.id} />
               <div className="mc-grid-3">
                 <label>
-                  Today RP
+                  今日
                   <input name="todayRp" type="number" defaultValue={r.todayRp} />
                 </label>
                 <label>
-                  Week RP
+                  今週
                   <input name="weekRp" type="number" defaultValue={r.weekRp} />
                 </label>
                 <label>
-                  Status
+                  状態
                   <select name="status" defaultValue={r.status}>
-                    <option value="green">green</option>
-                    <option value="yellow">yellow</option>
-                    <option value="red">red</option>
+                    <option value="green">余裕あり</option>
+                    <option value="yellow">注意</option>
+                    <option value="red">逼迫</option>
                   </select>
                 </label>
               </div>
               <Button type="submit" variant="secondary">
-                Update resource
+                更新
               </Button>
             </form>
           </Panel>

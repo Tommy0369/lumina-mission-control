@@ -36,6 +36,23 @@ export type Domain =
 export type TaskSize = "S" | "M" | "L" | "XL";
 
 export type ProjectStatus = "active" | "paused" | "archived" | "done";
+
+/** 作戦作成時の 3 問（初推定の入力） */
+export type PlanTouchSurface =
+  | "unknown"
+  | "existing_code"
+  | "greenfield"
+  | "ui_only";
+
+export type PlanProductionExposure = "local_only" | "may_affect_users";
+
+export type PlanDeadlineUrgency = "flexible" | "this_week" | "today";
+
+export interface PlanIntake {
+  touchSurface: PlanTouchSurface;
+  productionExposure: PlanProductionExposure;
+  deadline: PlanDeadlineUrgency;
+}
 export type MissionStatus =
   | "planned"
   | "in_progress"
@@ -95,6 +112,7 @@ export interface Project {
   localPathHint?: string;
   techStack: string[];
   progress: number;
+  planIntake?: PlanIntake;
   createdAt: string;
   updatedAt: string;
 }
@@ -166,7 +184,14 @@ export interface ModelProfile {
   id: string;
   agentId: AgentId;
   tier: ModelTier;
+  /** 画面に出す短い名前。例: GPT-5.6 Sol · 高 */
   label: string;
+  /** モデル選択に出る名前 */
+  pickerModel: string;
+  /** 仕事量スライダーに出る名前。Haiku など無しなら null */
+  pickerEffort: string | null;
+  /** そのアプリで選べる仕事量 */
+  effortMenu: string;
   providerModelHint: string;
   active: boolean;
 }

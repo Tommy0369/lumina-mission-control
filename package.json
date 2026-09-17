@@ -8,8 +8,9 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @lumina/router test && pnpm --filter @lumina/prompts test",
-    "smoke": "tsx scripts/smoke-v01.ts"
+    "test": "pnpm --filter @lumina/router test && pnpm --filter @lumina/prompts test && tsx --test apps/web/src/lib/orchestration.test.ts apps/web/src/lib/auth/policy.test.ts apps/web/src/lib/plan-intake.test.ts",
+    "smoke": "tsx scripts/smoke-v01.ts",
+    "verify:auth": "tsx scripts/verify-auth-ui.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

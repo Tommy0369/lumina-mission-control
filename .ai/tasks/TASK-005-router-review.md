@@ -1,6 +1,6 @@
 # TASK-005 — Router Review
 
-Status: todo
+Status: done
 Recommended: Codex / Strong
 Mode: review
 

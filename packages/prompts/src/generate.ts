@@ -24,8 +24,31 @@ export interface TaskPromptInput {
   >;
   agent?: AgentId;
   modelTier?: ModelTier;
+  modelName?: string;
+  pickerModel?: string;
+  pickerEffort?: string | null;
   mode?: RunMode;
   currentState?: string;
+  /** 作戦作成時ヒアリング（初推定の根拠） */
+  planContext?: string;
+}
+
+function pickerLines(input: {
+  pickerModel?: string;
+  pickerEffort?: string | null;
+  modelName?: string;
+  tier: string;
+}): string {
+  const model = input.pickerModel ?? input.modelName ?? input.tier;
+  const effort = input.pickerEffort
+    ? `Effort: ${input.pickerEffort}\n`
+    : "";
+  const picker = input.pickerModel
+    ? input.pickerEffort
+      ? `Picker: モデルで「${input.pickerModel}」を選び、仕事量は「${input.pickerEffort}」\n`
+      : `Picker: モデルで「${input.pickerModel}」を選ぶ（仕事量の選択なし）\n`
+    : "";
+  return `Model: ${model}\n${effort}${picker}`;
 }
 
 export function generateTaskPrompt(input: TaskPromptInput): string {
@@ -46,6 +69,12 @@ export function generateTaskPrompt(input: TaskPromptInput): string {
   return `ROLE
 ${ROLE_BY_AGENT[agent]}
 Agent: ${agent}
+${pickerLines({
+  pickerModel: input.pickerModel,
+  pickerEffort: input.pickerEffort,
+  modelName: input.modelName,
+  tier,
+})}
 Model Tier: ${tier}
 Mode: ${mode}
 
@@ -61,7 +90,7 @@ ${input.task.description || "(none)"}
 CONTEXT
 Relevant files:
 ${files}
-
+${input.planContext ? `\n${input.planContext}\n` : ""}
 CURRENT STATE
 ${input.currentState ?? "See task description and repository state."}
 
@@ -86,29 +115,47 @@ Stop when acceptance criteria pass.
 Do not perform unrelated refactoring.`;
 }
 
+const DEFAULT_REVIEW_FOCUS = [
+  "authentication regressions",
+  "session handling",
+  "security vulnerabilities",
+  "missing edge cases",
+  "missing tests",
+];
+
 export function generateReviewPrompt(input: {
   taskCode: string;
   taskTitle: string;
   focus?: string[];
+  pickerModel?: string;
+  pickerEffort?: string | null;
 }): string {
-  const focus =
-    input.focus && input.focus.length > 0
-      ? input.focus.map((f) => `- ${f}`).join("\n")
-      : [
-          "- authentication regressions",
-          "- session handling",
-          "- security vulnerabilities",
-          "- missing edge cases",
-          "- missing tests",
-        ].join("\n");
+  const focusLines =
+    input.focus && input.focus.length > 0 ? input.focus : DEFAULT_REVIEW_FOCUS;
+  const focus = focusLines.map((f) => `- ${f.replace(/^-\s*/, "")}`).join("\n");
+  const pickerModel = input.pickerModel ?? "GPT-5.6 Sol";
+  const pickerEffort = input.pickerEffort ?? "高";
 
-  return `Review the current git diff for ${input.taskCode} (${input.taskTitle}).
+  return `ROLE
+Reviewer / Independent Engineer
+Agent: Codex
+${pickerLines({ pickerModel, pickerEffort, tier: "strong" })}
+Mode: review
 
-Do not rewrite the implementation unless necessary.
+GOAL
+Review the current git diff for ${input.taskCode} — ${input.taskTitle}
 
-Focus exclusively on:
+TASK
+${input.taskCode} — ${input.taskTitle}
+
+FOCUS
 ${focus}
 
+DO NOT TOUCH
+- Do not rewrite the implementation unless necessary
+- No drive-by refactors outside the diff
+
+OUTPUT
 Return:
 
 PASS
@@ -119,13 +166,17 @@ FINDINGS:
 severity
 file
 issue
-recommended fix`;
+recommended fix
+
+STOP CONDITION
+Stop when review is complete or blocked with clear evidence.`;
 }
 
 export function generateHandoffMarkdown(input: {
   taskCode: string;
   worker: AgentId;
   modelTier: ModelTier;
+  modelName?: string;
   result: "SUCCESS" | "FAILURE";
   changedFiles: string[];
   tests: string;
@@ -149,7 +200,7 @@ WORKER
 ${input.worker}
 
 MODEL
-${input.modelTier}
+${input.modelName ?? input.modelTier}
 
 RESULT
 ${input.result}

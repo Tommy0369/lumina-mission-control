@@ -15,7 +15,7 @@ export function CopyPromptButton({ text }: { text: string }) {
         setTimeout(() => setCopied(false), 1500);
       }}
     >
-      {copied ? "Copied" : "Copy Prompt"}
+      {copied ? "コピーした" : "プロンプトをコピー"}
     </Button>
   );
 }
@@ -33,7 +33,7 @@ export function PromptViewer({
     <div className="mc-stack">
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Button type="button" variant="secondary" onClick={() => setShow((v) => !v)}>
-          {show ? "Hide Prompt" : "View Prompt"}
+          {show ? "プロンプトを隠す" : "プロンプトを見る"}
         </Button>
         <CopyPromptButton text={prompt} />
         {reviewPrompt ? (
@@ -43,7 +43,7 @@ export function PromptViewer({
               variant="ghost"
               onClick={() => setShowReview((v) => !v)}
             >
-              {showReview ? "Hide Review Prompt" : "View Review Prompt"}
+              {showReview ? "レビュー用を隠す" : "レビュー用を見る"}
             </Button>
             <CopyPromptButton text={reviewPrompt} />
           </>
